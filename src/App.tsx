@@ -111,7 +111,7 @@ export default function App(){
           options={[{value:"flat",label:"Flat"},{value:"globe",label:"Globe"}]}/>
       </div>
 
-      {view==="globe"&&!paused&&(
+      {view==="globe"&&!paused&&!dockOpen&&(
         <div className="tools">
           <button className="icon-btn" aria-label="Toggle auto-spin" title="Toggle auto-spin" aria-pressed={autoSpin} onClick={()=>setAutoSpin(a=>!a)}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13 2.5v3h-3"/></svg>
@@ -122,7 +122,7 @@ export default function App(){
         </div>
       )}
 
-      <div className="hint">Click a continent to begin</div>
+      <div className="hint">Tap a continent to begin</div>
       {!paused&&(
         <button className="handle" aria-expanded={dockOpen} aria-label={dockOpen?"Hide continent list":"Show continent list"}
           onClick={()=>setDockOpen(o=>!o)}>

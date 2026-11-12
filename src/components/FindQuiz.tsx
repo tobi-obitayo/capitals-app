@@ -1,9 +1,9 @@
-import {useEffect,useMemo,useReducer,useRef,useState} from "react";
+import {useEffect,useLayoutEffect,useMemo,useReducer,useRef,useState} from "react";
 import type {ContinentName,Country} from "../data";
 import type {World} from "../geo";
 import {buildScene,drawFind,hitTest,insetAt,zoomView,type Scene,type View} from "../map/find";
 import {useQuizClock,type QuizCfg,type QuizClock,type QuizResult,type Status} from "../quiz";
-import {shuffle} from "../util";
+import {shuffle,TAP_SLOP} from "../util";
 import {useWorld50} from "./DrillMap";
 import {ClockPill} from "./ui";
 
@@ -16,9 +16,9 @@ interface Props{
 }
 
 const FLASH_MS=800;
-const QUIZ_BAR=84;   // px reserved at the top for the quiz bar
+const QUIZ_BAR_FALLBACK=84;
 
-/** Full-screen "click the country" quiz on a pan/zoom map. */
+/** Full-screen "tap the country" quiz on a pan/zoom map. */
 export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
   const world=useWorld50();
   const [order]=useState(()=>shuffle(items));
@@ -32,6 +32,10 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
   const toastTimer=useRef<number>(0);
 
   const canvasRef=useRef<HTMLCanvasElement>(null);
+  const hudRef=useRef<HTMLDivElement>(null);
+  const screenRef=useRef<HTMLDivElement>(null);
+  const topInset=useRef(QUIZ_BAR_FALLBACK);
+  const [toastTop,setToastTop]=useState(92);
   const view=useRef<View>({k:1,tx:0,ty:0});
   const dirty=useRef(true);
   const size=useRef({W:0,H:0});
@@ -71,7 +75,7 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
     advance();
   };
 
-  /** the player clicked `name` (a country in this continent) */
+  /** the player tapped `name` (a country in this continent) */
   const guess=(name:string)=>{
     if(!target||finished.current)return;
     if(name===target.k){
@@ -95,13 +99,30 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
   const scene=useRef<Scene|null>(null);
   const layout=()=>{
     const {W,H}=size.current;
-    if(worldRef.current&&W>0)scene.current=buildScene(worldRef.current,cn,W,H,{top:QUIZ_BAR});
+    if(worldRef.current&&W>0)scene.current=buildScene(worldRef.current,cn,W,H,{top:topInset.current});
     dirty.current=true;
   };
   const zoomAt=(px:number,py:number,nk:number)=>{
     view.current=zoomView(view.current,px,py,nk);
     dirty.current=true;
   };
+
+  useLayoutEffect(()=>{
+    const hud=hudRef.current;
+    if(!hud)return;
+    const measure=()=>{
+      // offsetHeight is 0 before layout / in some test mocks — keep the fallback so the map isn't crushed
+      const h=hud.offsetHeight,y=hud.offsetTop;
+      const top=h>0?Math.ceil(y+h+8):QUIZ_BAR_FALLBACK;
+      topInset.current=top;
+      setToastTop(h>0?Math.ceil(y+h+10):92);
+      layout();
+    };
+    const ro=new ResizeObserver(measure);ro.observe(hud);
+    measure();
+    return()=>ro.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[cn,cfg.hard,answered]);
 
   /* ---------- draw + input ---------- */
   useEffect(()=>{
@@ -125,24 +146,65 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
       return sc?hitTest(wd,sc,view.current,x,y):null;
     };
 
+    const pointers=new Map<number,{x:number;y:number}>();
     let drag:{x:number;y:number;tx:number;ty:number;moved:boolean;onInset:boolean}|null=null;
+    let pinch:{dist:number;k:number}|null=null;
     const pos=(e:PointerEvent|WheelEvent):[number,number]=>{const r=canvas.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
+    const midDist=()=>{
+      const pts=[...pointers.values()];
+      if(pts.length<2)return null;
+      return{
+        mid:[(pts[0].x+pts[1].x)/2,(pts[0].y+pts[1].y)/2] as [number,number],
+        dist:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y),
+      };
+    };
     const down=(e:PointerEvent)=>{
       const [x,y]=pos(e);
-      drag={x,y,tx:view.current.tx,ty:view.current.ty,moved:false,onInset:!!(scene.current&&insetAt(scene.current,x,y))};
+      pointers.set(e.pointerId,{x,y});
       canvas.setPointerCapture(e.pointerId);
+      if(pointers.size>=2){
+        drag=null;canvas.classList.remove("panning");
+        const m=midDist();
+        if(m&&m.dist>0)pinch={dist:m.dist,k:view.current.k};
+      }else{
+        pinch=null;
+        drag={x,y,tx:view.current.tx,ty:view.current.ty,moved:false,onInset:!!(scene.current&&insetAt(scene.current,x,y))};
+      }
     };
     const move=(e:PointerEvent)=>{
-      if(!drag)return;
+      if(!pointers.has(e.pointerId))return;
       const [x,y]=pos(e);
-      if(!drag.onInset&&Math.hypot(x-drag.x,y-drag.y)>5){drag.moved=true;canvas.classList.add("panning")}
+      pointers.set(e.pointerId,{x,y});
+      if(pointers.size>=2){
+        const m=midDist();
+        if(m&&pinch&&pinch.dist>0){
+          if(scene.current&&insetAt(scene.current,m.mid[0],m.mid[1]))return;
+          zoomAt(m.mid[0],m.mid[1],pinch.k*(m.dist/pinch.dist));
+        }
+        return;
+      }
+      if(!drag)return;
+      if(!drag.onInset&&Math.hypot(x-drag.x,y-drag.y)>TAP_SLOP){drag.moved=true;canvas.classList.add("panning")}
       if(drag.moved){view.current={...view.current,tx:drag.tx+x-drag.x,ty:drag.ty+y-drag.y};dirty.current=true}
     };
     const up=(e:PointerEvent)=>{
-      if(!drag)return;
-      const wasClick=!drag.moved;drag=null;canvas.classList.remove("panning");
-      const wd=peek.current;
-      if(wasClick&&wd){const [x,y]=pos(e);const n=hit(wd,x,y);if(n)guessRef.current(n)}
+      const wasClick=drag&&!drag.moved&&pointers.size<=1;
+      pointers.delete(e.pointerId);
+      if(pointers.size<2)pinch=null;
+      if(pointers.size===1){
+        const [id,p]=[...pointers.entries()][0];
+        drag={x:p.x,y:p.y,tx:view.current.tx,ty:view.current.ty,moved:false,onInset:!!(scene.current&&insetAt(scene.current,p.x,p.y))};
+        void id;
+      }else{
+        const click=wasClick;drag=null;canvas.classList.remove("panning");
+        const wd=peek.current;
+        if(click&&wd){const [x,y]=pos(e);const n=hit(wd,x,y);if(n)guessRef.current(n)}
+      }
+    };
+    const cancel=(e:PointerEvent)=>{
+      pointers.delete(e.pointerId);
+      if(pointers.size<2)pinch=null;
+      if(pointers.size===0){drag=null;canvas.classList.remove("panning")}
     };
     const wheel=(e:WheelEvent)=>{
       e.preventDefault();
@@ -150,7 +212,10 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
       if(scene.current&&insetAt(scene.current,x,y))return;   // insets are already magnified
       zoomAt(x,y,view.current.k*Math.exp(-e.deltaY*.002));
     };
-    canvas.addEventListener("pointerdown",down);canvas.addEventListener("pointermove",move);canvas.addEventListener("pointerup",up);
+    canvas.addEventListener("pointerdown",down);
+    canvas.addEventListener("pointermove",move);
+    canvas.addEventListener("pointerup",up);
+    canvas.addEventListener("pointercancel",cancel);
     canvas.addEventListener("wheel",wheel,{passive:false});
     const ro=new ResizeObserver(resize);ro.observe(canvas);
     resize();
@@ -167,7 +232,8 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
     raf=requestAnimationFrame(loop);
     return()=>{
       alive=false;cancelAnimationFrame(raf);ro.disconnect();
-      canvas.removeEventListener("pointerdown",down);canvas.removeEventListener("pointermove",move);canvas.removeEventListener("pointerup",up);
+      canvas.removeEventListener("pointerdown",down);canvas.removeEventListener("pointermove",move);
+      canvas.removeEventListener("pointerup",up);canvas.removeEventListener("pointercancel",cancel);
       canvas.removeEventListener("wheel",wheel);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -193,37 +259,37 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
   const progressLabel=useMemo(()=>`${Math.min(answered+1,total)} / ${total}`,[answered,total]);
 
   return(
-    <div className="quiz-screen">
-      <canvas ref={canvasRef} className="qcanvas" aria-label={`Map of ${cn}. Click the country you are asked to find.`}/>
+    <div className="quiz-screen" ref={screenRef}>
+      <canvas ref={canvasRef} className="qcanvas" aria-label={`Map of ${cn}. Tap the country you are asked to find.`}/>
 
-      <div className="qhud" role="region" aria-label="Quiz status">
+      <div className="qhud" ref={hudRef} role="region" aria-label="Quiz status">
         <div className="qh-prompt">
           <span className="qh-kicker">Find</span>
           <span className="qh-target" aria-live="polite">{target?.k??"…"}</span>
         </div>
         <div className="qh-meta">
           <b>{progressLabel}</b>
-          <span>{okCount} correct</span>
+          <span className="qh-ok">{okCount} correct</span>
           {cfg.hard&&<span className="badge">Hard</span>}
         </div>
         <ClockPill clock={clock} timerConfigured={cfg.timerOn}/>
         <div className="qh-actions">
-          <button className="btn small ghost" onClick={skip} title="Skip this country (counts as missed)">Skip<kbd>S</kbd></button>
+          <button className="btn small ghost" onClick={skip} title="Skip this country (counts as missed)">Skip<span className="kbd-only"><kbd>S</kbd></span></button>
           <button className="btn small danger" onClick={()=>finishRef.current("giveup")}>Give up</button>
           <button className="icon-btn" aria-label="Exit quiz without results" title="Exit quiz" onClick={onExit}>✕</button>
         </div>
       </div>
 
-      {toast&&<div className="qtoast" role="status">{toast}</div>}
+      {toast&&<div className="qtoast" style={{top:toastTop}} role="status">{toast}</div>}
 
       {!world&&<div className="qloading">Loading map…</div>}
 
       <div className="zoom-tools">
         <button className="icon-btn" aria-label="Zoom in" onClick={()=>zoomAt(size.current.W/2,size.current.H/2,view.current.k*1.5)}>+</button>
         <button className="icon-btn" aria-label="Zoom out" onClick={()=>zoomAt(size.current.W/2,size.current.H/2,view.current.k/1.5)}>−</button>
-        <button className="icon-btn" aria-label="Reset zoom" title="Reset view" onClick={()=>zoomAt(0,0,1)}>⌖</button>
+        <button className="icon-btn" aria-label="Reset zoom" title="Reset view" onClick={()=>{view.current={k:1,tx:0,ty:0};dirty.current=true}}>⌖</button>
       </div>
-      <div className="qhint">Drag to pan · scroll to zoom{scene.current&&scene.current.panels.length>1?" · small islands are in the boxes":""}</div>
+      <div className="qhint">Drag to pan · pinch or scroll to zoom{scene.current&&scene.current.panels.length>1?" · small islands are in the boxes":""}</div>
     </div>
   );
 }

@@ -19,7 +19,7 @@ export const Dock=forwardRef<HTMLDivElement,Props>(function Dock({open,onOpen,on
           <button key={cn} className="chip" tabIndex={open?0:-1}
             onClick={()=>onOpen(cn)} onMouseEnter={()=>onHover(cn)} onMouseLeave={()=>onHover(null)}
             onFocus={()=>onHover(cn)} onBlur={()=>onHover(null)}>
-            <span className="top"><span className="nm">{cn}</span><kbd>{i+1}</kbd></span>
+            <span className="top"><span className="nm">{cn}</span><kbd className="kbd-only">{i+1}</kbd></span>
             <span className="ct">{s.mastered} / {s.total} mastered</span>
             <span className="bar">
               <i className="learn" style={{width:`${(s.mastered+s.learning)/s.total*100}%`}}/>

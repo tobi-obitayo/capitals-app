@@ -198,7 +198,7 @@ describe("no hidden tooltips in the drill and quiz modals",()=>{
     click("Quiz");
     expect(document.querySelector(".modal .info")).toBeNull();
     click("Find the country");
-    expect(screen.getByText(/Keep clicking until you find it/)).toBeTruthy();
+    expect(screen.getByText(/Keep tapping until you find it/)).toBeTruthy();
     fireEvent.click(screen.getByRole("switch",{name:"Hard mode"}));
     expect(screen.getByText(/One try per country/)).toBeTruthy();
   });
@@ -315,10 +315,10 @@ describe("find the country quiz",()=>{
     click("Give up");
     expect(await screen.findByText("You gave up")).toBeTruthy();
     expect(screen.getByText("4%")).toBeTruthy();
-    expect(screen.getByText(/1 wrong click/)).toBeTruthy();
+    expect(screen.getByText(/1 wrong tap/)).toBeTruthy();
   });
 
-  it("hard mode: one wrong click marks the country missed and moves on",async()=>{
+  it("hard mode: one wrong tap marks the country missed and moves on",async()=>{
     const canvas=await start(true);
     const first=target();
     const decoy=["Canada","Mexico","Cuba"].find(n=>n!==first)!;

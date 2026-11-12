@@ -19,13 +19,20 @@ export function Info({children,align="center",label="More info"}:{children:React
 }
 
 export function Seg<T extends string|number>({value,options,onChange,full=false,label}:{
-  value:T;options:{value:T;label:ReactNode;disabled?:boolean;title?:string}[];onChange:(v:T)=>void;full?:boolean;label?:string;
+  value:T;options:{value:T;label:ReactNode;shortLabel?:ReactNode;disabled?:boolean;title?:string}[];
+  onChange:(v:T)=>void;full?:boolean;label?:string;
 }){
   return(
     <div className={"seg"+(full?" full":"")} role="group" aria-label={label}>
       {options.map(o=>(
-        <button key={String(o.value)} type="button" aria-pressed={o.value===value} disabled={o.disabled} title={o.title}
-          onClick={()=>onChange(o.value)}>{o.label}</button>
+        <button key={String(o.value)} type="button" aria-pressed={o.value===value} disabled={o.disabled}
+          aria-label={typeof o.label==="string"?o.label:undefined}
+          title={o.title??(typeof o.label==="string"?o.label:undefined)}
+          onClick={()=>onChange(o.value)}>
+          {o.shortLabel!=null
+            ?<><span className="seg-long" aria-hidden="true">{o.label}</span><span className="seg-short" aria-hidden="true">{o.shortLabel}</span></>
+            :o.label}
+        </button>
       ))}
     </div>
   );

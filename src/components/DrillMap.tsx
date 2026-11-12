@@ -70,7 +70,11 @@ export function DrillMap({cn,fill,hl,emph=null,onHover,children}:Props){
     const n=hitMini(wd,sc,e.clientX-r.left,e.clientY-r.top);
     if(n!==lastHover.current){lastHover.current=n;onHover(n)}
   };
-  const leave=()=>{if(onHover&&lastHover.current!==null){lastHover.current=null;onHover(null)}};
+  const leave=(e:React.PointerEvent)=>{
+    // keep sticky highlight after a finger tap; mouse / test hover still clears on leave
+    if(e.pointerType==="touch")return;
+    if(onHover&&lastHover.current!==null){lastHover.current=null;onHover(null)}
+  };
 
   return(
     <div className="right" ref={wrap} onPointerMove={move} onPointerLeave={leave}>

@@ -66,6 +66,9 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
   const next=()=>{
     if(i+1>=order.length){finishRef.current("done");return}
     setI(i+1);setFb(null);force();
+    requestAnimationFrame(()=>{
+      if(inputRef.current){inputRef.current.value="";inputRef.current.focus()}
+    });
   };
 
   // after an auto-check, show the green state briefly then move on by itself
@@ -75,6 +78,10 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
     return()=>clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[fb]);
+
+  useEffect(()=>{
+    if(!fb)inputRef.current?.focus();
+  },[i,fb]);
 
   useEffect(()=>{
     const onKey=(e:KeyboardEvent)=>{
@@ -93,7 +100,7 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
   const last=i+1>=order.length;
 
   return(
-    <ModalShell title={`${cn} · Name the capital`} dismissOnBackdrop={false}
+    <ModalShell title={`${cn} · Name the capital`} dismissOnBackdrop={false} compactMap
       sub={cfg.spell?"Spell check on":"Spell check off · checks as you type"} onClose={onExit}
       right={(
         <DrillMap cn={cn} fill={fill} hl={q?.k??null}>
@@ -119,9 +126,10 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
             <div className="kind">Capital of</div>
             <h3>{q.k}</h3>
           </div>
-          <form key={i} className="stack" onSubmit={submit}>
-            <input ref={inputRef} type="text" autoFocus disabled={!!fb} placeholder="Type the capital…"
-              autoComplete="off" autoCapitalize="off" spellCheck={false} onChange={onTyping}/>
+          <form className="stack" onSubmit={submit}>
+            <input ref={inputRef} type="text" disabled={!!fb} placeholder="Type the capital…"
+              autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="done"
+              onChange={onTyping}/>
             {fb&&(
               <div className={"fb "+(fb.ok?"ok":"bad")}>
                 {fb.ok
@@ -130,13 +138,13 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
               </div>
             )}
             {fb
-              ?<button type="button" className="btn" autoFocus onClick={next}>{last?"Finish":"Next"}<kbd>↵</kbd></button>
-              :<button type="submit" className="btn">Check<kbd>↵</kbd></button>}
+              ?<button type="button" className="btn" onClick={next}>{last?"Finish":"Next"}<span className="kbd-only"><kbd>↵</kbd></span></button>
+              :<button type="submit" className="btn">Check<span className="kbd-only"><kbd>↵</kbd></span></button>}
           </form>
         </>
       )}
 
-      <div className="quiz-foot">
+      <div className="quiz-foot sticky-foot">
         <button className="btn small ghost" onClick={skip} disabled={!!fb}>Skip</button>
         <button className="btn small danger" onClick={()=>finishRef.current("giveup")}>Give up</button>
       </div>

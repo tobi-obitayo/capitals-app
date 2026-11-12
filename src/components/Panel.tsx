@@ -47,7 +47,7 @@ export function Panel({onClose,onOpen,onHover}:Props){
         })}
       </div>
 
-      <div className="p-sec">
+      <div className="p-sec kbd-only">
         <div className="lbl">Shortcuts</div>
         <div className="keys">
           <div><span>Open a continent</span><span><Kbd>1</Kbd>–<Kbd>6</Kbd></span></div>
@@ -56,7 +56,10 @@ export function Panel({onClose,onOpen,onHover}:Props){
           <div><span>This panel</span><Kbd>I</Kbd></div>
           <div><span>Close</span><Kbd>Esc</Kbd></div>
         </div>
-        <div className="p-sub" style={{marginTop:10}}>Globe: drag to spin in any direction, scroll to zoom. Use the arrow at the bottom (or C) for the continent list.</div>
+        <div className="p-sub" style={{marginTop:10}}>Globe: drag to spin in any direction, scroll or pinch to zoom. Use the arrow at the bottom (or C) for the continent list.</div>
+      </div>
+      <div className="p-sec touch-only">
+        <div className="p-sub">Tap a continent on the map or open the list with the arrow at the bottom. On the globe, drag to spin and pinch to zoom.</div>
       </div>
 
       <button className="link" onClick={()=>{if(confirm("Reset all saved progress?"))resetProgress()}}>Reset all progress</button>

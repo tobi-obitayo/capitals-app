@@ -44,6 +44,12 @@ export function autoMatches(accepted:string[],typed:string):boolean{
 /** how long the green "correct" state shows after an auto-check before moving on */
 export const AUTO_ADVANCE_MS=600;
 
+/** finger jitter before a drag counts as a pan (CSS px) */
+export const TAP_SLOP=12;
+
+export const isCoarsePointer=()=>
+  typeof matchMedia==="function"&&matchMedia("(pointer: coarse)").matches;
+
 export const fmtTime=(sec:number)=>{
   const s=Math.max(0,Math.ceil(sec));
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;

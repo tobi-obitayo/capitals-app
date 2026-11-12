@@ -10,6 +10,7 @@ import {ModalShell} from "./ModalShell";
 import {Field,Kbd,Seg,Switch} from "./ui";
 
 const MODE_NAMES=["Flashcards","Multiple choice","Type it"] as const;
+const MODE_SHORT=["Cards","Choice","Type"] as const;
 
 function batchItems(cn:ContinentName,k:string):Country[]{
   const a=CONT[cn];
@@ -62,6 +63,9 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const next=()=>{
     if(i+1>=queue.length){setScreen("done");return}
     setI(i+1);resetCard(queue[i+1]);
+    if(mi===2)requestAnimationFrame(()=>{
+      if(inputRef.current){inputRef.current.value="";inputRef.current.focus()}
+    });
   };
   const flip=()=>{if(mi===0&&!flipped)setFlipped(true)};
   const gradeFlash=(ok:boolean)=>{mark(ok);next()};
@@ -85,6 +89,10 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
     return()=>clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[fb]);
+
+  useEffect(()=>{
+    if(screen==="run"&&mi===2&&!fb)inputRef.current?.focus();
+  },[screen,mi,i,fb]);
 
   /* keyboard inside a run */
   useEffect(()=>{
@@ -126,6 +134,7 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
 
   return(
     <ModalShell title={`${cn} Capitals`} sub={sub} onClose={onClose}
+      compactMap={screen==="run"&&mi===2}
       right={<DrillMap cn={cn} fill={fill} hl={hl}>{legend}</DrillMap>}>
       {screen==="setup"&&(
         <>
@@ -158,12 +167,12 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
           {mi===0&&(
             <>
               <button key={i} className={"flip"+(flipped?" on":"")} autoFocus={!flipped} onClick={flip}>
-                {flipped?answerOf(q):"Tap or press Space to reveal"}
+                {flipped?answerOf(q):"Tap to reveal"}
               </button>
               {flipped&&(
                 <div className="row2" style={{marginTop:12}}>
-                  <button className="btn bad" onClick={()=>gradeFlash(false)}>Missed<kbd>←</kbd></button>
-                  <button className="btn ok" autoFocus onClick={()=>gradeFlash(true)}>Got it<kbd>→</kbd></button>
+                  <button className="btn bad" onClick={()=>gradeFlash(false)}>Missed<span className="kbd-only"><kbd>←</kbd></span></button>
+                  <button className="btn ok" autoFocus onClick={()=>gradeFlash(true)}>Got it<span className="kbd-only"><kbd>→</kbd></span></button>
                 </div>
               )}
             </>
@@ -182,22 +191,22 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
                   );
                 })}
               </div>
-              {sel!==null&&<button className="btn" autoFocus style={{marginTop:12}} onClick={next}>{i+1>=queue.length?"Finish":"Next"}<kbd>↵</kbd></button>}
+              {sel!==null&&<button className="btn" autoFocus style={{marginTop:12}} onClick={next}>{i+1>=queue.length?"Finish":"Next"}<span className="kbd-only"><kbd>↵</kbd></span></button>}
             </>
           )}
 
           {mi===2&&(
-            <form key={i} className="stack" onSubmit={submitTyped}>
-              <input ref={inputRef} type="text" autoFocus disabled={!!fb} placeholder={c2k?"Type the capital…":"Type the country…"}
-                autoComplete="off" autoCapitalize="off" spellCheck={false} onChange={onTyping}/>
+            <form className="stack" onSubmit={submitTyped}>
+              <input ref={inputRef} type="text" disabled={!!fb} placeholder={c2k?"Type the capital…":"Type the country…"}
+                autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="done" onChange={onTyping}/>
               {fb&&(
                 <div className={"fb "+(fb.ok?"ok":"bad")}>
                   {fb.ok?(fb.close?<>Close enough. It's spelled <b>{answerOf(q)}</b></>:"Correct!"):<>The answer is <b>{answerOf(q)}</b></>}
                 </div>
               )}
               {fb
-                ?<button type="button" className="btn" autoFocus onClick={next}>{i+1>=queue.length?"Finish":"Next"}<kbd>↵</kbd></button>
-                :<button type="submit" className="btn">Check<kbd>↵</kbd></button>}
+                ?<button type="button" className="btn" onClick={next}>{i+1>=queue.length?"Finish":"Next"}<span className="kbd-only"><kbd>↵</kbd></span></button>
+                :<button type="submit" className="btn">Check<span className="kbd-only"><kbd>↵</kbd></span></button>}
             </form>
           )}
         </>
@@ -220,7 +229,11 @@ function LearnSetup({cn,prefs,set,onStart}:{cn:ContinentName;prefs:Prefs;set:(p:
     <>
       <Field label="Study mode">
         <Seg full label="Study mode" value={prefs.mi} onChange={v=>set({mi:v})}
-          options={MODE_NAMES.map((n,idx)=>({value:idx as 0|1|2,label:n}))}/>
+          options={MODE_NAMES.map((n,idx)=>({
+            value:idx as 0|1|2,
+            label:n,
+            shortLabel:MODE_SHORT[idx],
+          }))}/>
       </Field>
       {prefs.mi===2&&(
         <Field label="Spelling" note={prefs.cfg.spell?"Small typos and missing accents are forgiven. Press Enter to check.":"Needs the exact spelling (capitals and accents don't matter) and checks the moment you type it right."}>
@@ -285,7 +298,7 @@ function QuizSetup({cn,cfg,setCfg,onStart}:{cn:ContinentName;cfg:QuizCfg;setCfg:
       </Field>
 
       {cfg.kind==="find"?(
-        <Field label="Mode" note={cfg.hard?"One try per country. A wrong click marks it missed and moves on.":"Keep clicking until you find it. It only counts as correct if your first click was right."}>
+        <Field label="Mode" note={cfg.hard?"One try per country. A wrong tap marks it missed and moves on.":"Keep tapping until you find it. It only counts as correct if your first tap was right."}>
           <div className="toggle-row">
             <Switch on={cfg.hard} onChange={v=>up({hard:v})} label="Hard mode"/>
             <span>{cfg.hard?"Hard mode":"Normal"}</span>

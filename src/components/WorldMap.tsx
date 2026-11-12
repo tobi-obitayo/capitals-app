@@ -4,6 +4,7 @@ import {getLanding,type World} from "../geo";
 import {drawLanding,pickContinent,vq} from "../map/landing";
 import {stats,useProgress} from "../progress";
 import type {ContinentName} from "../data";
+import {isCoarsePointer,TAP_SLOP} from "../util";
 
 export type View="globe"|"flat";
 interface Props{
@@ -96,31 +97,56 @@ export function WorldMap(props:Props){
     const showLabel=(cn:ContinentName|null,e?:PointerEvent)=>{
       if(!cn||!e||pr.current.paused){label.hidden=true;return}
       const st=stats(cn);
-      label.innerHTML=`<b>${cn}</b>${st.total} countries · ${st.mastered} mastered · click to drill`;
+      const verb=isCoarsePointer()?"tap":"click";
+      label.innerHTML=`<b>${cn}</b>${st.total} countries · ${st.mastered} mastered · ${verb} to drill`;
       label.hidden=false;label.style.left=e.clientX+"px";label.style.top=e.clientY+"px";
     };
     const setHover=(cn:ContinentName|null)=>{if(s.hover!==cn){s.hover=cn;s.dirty=true}};
     const local=(e:PointerEvent):[number,number]=>{const r=canvas.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
     const pick=(x:number,y:number)=>world?pickContinent(world,proj(),s.view,x,y):null;
 
-    /* ---- pointer: hover, click, trackball drag ---- */
+    /* ---- pointer: hover, click, trackball drag, pinch zoom ---- */
+    const pointers=new Map<number,[number,number]>();
     let drag:null|{pt:[number,number];moved:boolean;v0?:[number,number,number];q0?:ReturnType<typeof vq.fromEuler>;r0?:[number,number,number]}=null;
+    let pinch:null|{dist:number;zoom:number}=null;
+    const midDist=()=>{
+      const pts=[...pointers.values()];
+      if(pts.length<2)return null;
+      return{mid:[(pts[0][0]+pts[1][0])/2,(pts[0][1]+pts[1][1])/2] as [number,number],dist:Math.hypot(pts[0][0]-pts[1][0],pts[0][1]-pts[1][1])};
+    };
     const onDown=(e:PointerEvent)=>{
       if(pr.current.paused)return;
       pr.current.onTouch();
-      const pt=local(e);drag={pt,moved:false};
+      const pt=local(e);
+      pointers.set(e.pointerId,pt);
+      canvas.setPointerCapture(e.pointerId);
+      if(pointers.size>=2&&s.view==="globe"){
+        drag=null;s.dragging=false;
+        const m=midDist();
+        if(m&&m.dist>0)pinch={dist:m.dist,zoom:s.zoom};
+        showLabel(null);return;
+      }
+      pinch=null;drag={pt,moved:false};
       if(s.view==="globe"){
         globe.rotate(s.rotate);
         const ll=globe.invert!(pt) as [number,number];
         drag.v0=vq.cart(ll);drag.q0=vq.fromEuler(s.rotate);drag.r0=[...s.rotate];
-        canvas.setPointerCapture(e.pointerId);
       }
     };
     const onMove=(e:PointerEvent)=>{
       if(pr.current.paused)return;
       const pt=local(e);
+      if(pointers.has(e.pointerId))pointers.set(e.pointerId,pt);
+      if(pointers.size>=2&&s.view==="globe"&&pinch&&pinch.dist>0){
+        const m=midDist();
+        if(m){
+          s.zoom=Math.max(.7,Math.min(3,pinch.zoom*(m.dist/pinch.dist)));
+          layout();s.lastTouch=performance.now();
+        }
+        showLabel(null);return;
+      }
       if(drag&&s.view==="globe"){
-        if(Math.hypot(pt[0]-drag.pt[0],pt[1]-drag.pt[1])>4){drag.moved=true;s.dragging=true;setCursor("dragging")}
+        if(Math.hypot(pt[0]-drag.pt[0],pt[1]-drag.pt[1])>TAP_SLOP){drag.moved=true;s.dragging=true;setCursor("dragging")}
         if(drag.moved&&drag.r0&&drag.q0&&drag.v0){
           const ll=globe.rotate(drag.r0).invert!(pt) as [number,number];
           const q1=vq.mul(drag.q0,vq.delta(drag.v0,vq.cart(ll)));
@@ -134,13 +160,28 @@ export function WorldMap(props:Props){
       setCursor(cn?"pointer":s.view==="globe"?"grab":"");
     };
     const onUp=(e:PointerEvent)=>{
-      if(!drag)return;
-      const wasClick=!drag.moved,pt=local(e);
-      drag=null;s.dragging=false;s.lastTouch=performance.now();
-      if(wasClick&&!pr.current.paused){const cn=pick(pt[0],pt[1]);if(cn)pr.current.onPick(cn)}
-      homeCursor();
+      const wasClick=drag&&!drag.moved&&pointers.size<=1;
+      pointers.delete(e.pointerId);
+      if(pointers.size<2)pinch=null;
+      if(pointers.size===0){
+        const pt=local(e);
+        drag=null;s.dragging=false;s.lastTouch=performance.now();
+        if(wasClick&&!pr.current.paused){const cn=pick(pt[0],pt[1]);if(cn)pr.current.onPick(cn)}
+        homeCursor();
+      }else if(pointers.size===1&&s.view==="globe"){
+        const pt=[...pointers.values()][0];
+        drag={pt,moved:false};
+        globe.rotate(s.rotate);
+        const ll=globe.invert!(pt) as [number,number];
+        drag.v0=vq.cart(ll);drag.q0=vq.fromEuler(s.rotate);drag.r0=[...s.rotate];
+      }
     };
-    const onLeave=()=>{if(!drag){setHover(null);showLabel(null)}};
+    const onCancel=(e:PointerEvent)=>{
+      pointers.delete(e.pointerId);
+      if(pointers.size<2)pinch=null;
+      if(pointers.size===0){drag=null;s.dragging=false;homeCursor()}
+    };
+    const onLeave=()=>{if(!drag&&pointers.size===0){setHover(null);showLabel(null)}};
     const onWheel=(e:WheelEvent)=>{
       if(s.view!=="globe"||pr.current.paused)return;
       e.preventDefault();
@@ -150,6 +191,7 @@ export function WorldMap(props:Props){
     canvas.addEventListener("pointerdown",onDown);
     canvas.addEventListener("pointermove",onMove);
     canvas.addEventListener("pointerup",onUp);
+    canvas.addEventListener("pointercancel",onCancel);
     canvas.addEventListener("pointerleave",onLeave);
     canvas.addEventListener("wheel",onWheel,{passive:false});
     addEventListener("resize",setup);
@@ -181,7 +223,7 @@ export function WorldMap(props:Props){
         if(intro){
           const k=Math.max(0,(t-s.introStart!)/INTRO_MS);
           s.rotate=[s.rotate[0]+1.6*Math.pow(1-k,2),s.rotate[1],s.rotate[2]];
-        }else if(p.autoSpin&&!s.dragging&&!hv()&&!p.paused&&!document.hidden&&t-s.lastTouch>1500){
+        }else if(p.autoSpin&&!s.dragging&&!hv()&&!p.paused&&!document.hidden&&t-s.lastTouch>3000){
           s.rotate=[s.rotate[0]+.12,s.rotate[1],s.rotate[2]];s.dirty=true;
         }
       }
@@ -204,6 +246,7 @@ export function WorldMap(props:Props){
       canvas.removeEventListener("pointerdown",onDown);
       canvas.removeEventListener("pointermove",onMove);
       canvas.removeEventListener("pointerup",onUp);
+      canvas.removeEventListener("pointercancel",onCancel);
       canvas.removeEventListener("pointerleave",onLeave);
       canvas.removeEventListener("wheel",onWheel);
       removeEventListener("resize",setup);

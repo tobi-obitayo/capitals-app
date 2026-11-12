@@ -20,7 +20,7 @@ function detail(r:QuizResult,it:ItemResult){
   if(it.status==="ok")return r.cfg.kind==="find"&&it.attempts===0?"First try":"";
   if(it.status==="unseen")return "Not reached";
   if(r.cfg.kind==="capital")return it.typed?`You typed “${it.typed}”`:"Skipped";
-  if(it.attempts>0)return `${it.attempts} wrong click${it.attempts>1?"s":""}`;
+  if(it.attempts>0)return `${it.attempts} wrong tap${it.attempts>1?"s":""}`;
   return "Skipped";
 }
 
@@ -31,7 +31,7 @@ export function QuizResults({result,onRetry,onReview,onSetup,onClose}:Props){
   const got=result.items.filter(i=>i.status==="ok");
   const statusOf=new Map(result.items.map(i=>[i.k,i.status]));
   const fill=(n:string)=>statusOf.get(n)==="ok"?OK_FILL:statusOf.has(n)?BAD_FILL:"#FFFFFF";
-  // hovering a row lifts its country on the map; hovering a country highlights (and reveals) its row
+  // tap/hover a row lifts its country on the map; map tap sticks the highlight
   const [hover,setHover]=useState<{k:string;from:"list"|"map"}|null>(null);
   const rows=useRef(new Map<string,HTMLLIElement>());
   useEffect(()=>{
@@ -39,13 +39,19 @@ export function QuizResults({result,onRetry,onReview,onSetup,onClose}:Props){
   },[hover]);
   const kindName=result.cfg.kind==="find"?"Find the country":"Name the capital";
 
+  const select=(k:string,from:"list"|"map")=>{
+    setHover(h=>h?.k===k&&from==="list"?null:{k,from});
+  };
+
   const row=(it:ItemResult)=>{
     const c=dataByName[it.k];
     const good=it.status==="ok";
     return(
       <li key={it.k} className={(good?"ok":"bad")+(hover?.k===it.k?" hot":"")}
         ref={el=>{if(el)rows.current.set(it.k,el);else rows.current.delete(it.k)}}
-        onPointerEnter={()=>setHover({k:it.k,from:"list"})} onPointerLeave={()=>setHover(h=>h?.k===it.k?null:h)}>
+        onPointerEnter={e=>{if(e.pointerType!=="touch")setHover({k:it.k,from:"list"})}}
+        onPointerLeave={e=>{if(e.pointerType!=="touch")setHover(h=>h?.k===it.k&&h.from==="list"?null:h)}}
+        onClick={()=>select(it.k,"list")}>
         <span className="mk" aria-label={good?"Correct":"Missed"}>{good?"✓":"✗"}</span>
         <span className="who"><b>{c.k}</b><span className="cap">{c.c}</span></span>
         <span className="why">{detail(result,it)}</span>

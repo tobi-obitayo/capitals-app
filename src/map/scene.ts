@@ -88,11 +88,15 @@ export function buildScene(world:World,cn:ContinentName,W:number,H:number,o:Scen
   const main:Panel={id:"main",label:null,rect:null,P,s0:P.scale(),t0:P.translate() as [number,number]};
   const panels:Panel[]=[main];
 
-  const defs=INSETS[cn]??[];
+  const short=H<420||W<480;
+  let defs=INSETS[cn]??[];
+  // on short/narrow panes, fewer inset boxes so the main map stays usable
+  if(short&&defs.length>2)defs=defs.slice(0,2);
   if(defs.length){
     const land=framePoints(world,cn).map(p=>P(p)).filter((q):q is [number,number]=>!!q);
     const placed:Rect[]=[];
-    const maxW=Math.max(150,Math.min(280,W*.26)),maxH=Math.max(140,Math.min(320,H*.4));
+    const maxW=Math.max(short?110:150,Math.min(280,W*(short?0.42:0.26)));
+    const maxH=Math.max(short?110:140,Math.min(320,H*(short?0.32:0.4)));
     for(const d of defs){
       const [w0,s0,e0,n0]=d.box;
       // centre the Mercator on the box so boxes that cross the date line stay continuous
@@ -219,11 +223,12 @@ function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:Wor
       const ctr=path.centroid(s.feat) as [number,number];
       if(!isFinite(ctr[0])||!inRect(panel.rect!,ctr[0],ctr[1]))continue;
       const hl=o.hl===s.n;
-      c.beginPath();c.arc(ctr[0],ctr[1],hl?6:4.5,0,7);
+      const r=dotR(hl);
+      c.beginPath();c.arc(ctr[0],ctr[1],r,0,7);
       c.fillStyle=hl?NAVY:o.fill(s.n);c.fill();
       c.strokeStyle=hl?NAVY:"#64748B";c.lineWidth=1.1;c.stroke();
       const ov=!hl&&o.overlay?.(s.n);
-      if(ov){c.beginPath();c.arc(ctr[0],ctr[1],4.5,0,7);c.fillStyle=ov;c.fill()}
+      if(ov){c.beginPath();c.arc(ctr[0],ctr[1],r,0,7);c.fillStyle=ov;c.fill()}
     }
   }
 
@@ -235,11 +240,12 @@ function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:Wor
     const p=P(mk.ll) as [number,number]|null;
     if(!onPanel(p))continue;
     const hl=o.hl===mk.n;
-    c.beginPath();c.arc(p![0],p![1],hl?6:5,0,7);
+    const r=dotR(hl);
+    c.beginPath();c.arc(p![0],p![1],r,0,7);
     c.fillStyle=hl?NAVY:o.fill(mk.n);c.fill();
     c.strokeStyle=hl?NAVY:"#64748B";c.lineWidth=1;c.stroke();
     const ov=!hl&&o.overlay?.(mk.n);
-    if(ov){c.beginPath();c.arc(p![0],p![1],5,0,7);c.fillStyle=ov;c.fill()}
+    if(ov){c.beginPath();c.arc(p![0],p![1],r,0,7);c.fillStyle=ov;c.fill()}
     if(hl&&!inset)ring=p;
   }
 
@@ -325,8 +331,10 @@ export function drawScene(c:CanvasRenderingContext2D,scene:Scene,world:World,o:D
 
 /* ------------------------------ hit testing ------------------------------ */
 
-const MARKER_HIT=10;
-const NEAR_HIT=10;
+const coarsePointer=()=>typeof matchMedia==="function"&&matchMedia("(pointer: coarse)").matches;
+const markerHit=()=>coarsePointer()?20:10;
+const nearHit=()=>coarsePointer()?20:10;
+const dotR=(hl:boolean)=>coarsePointer()?(hl?9:7.5):(hl?6:4.5);
 
 function hitPanel(world:World,scene:Scene,panel:Panel,P:GeoProjection,x:number,y:number):string|null{
   const ll=P.invert?.([x,y]);
@@ -337,7 +345,7 @@ function hitPanel(world:World,scene:Scene,panel:Panel,P:GeoProjection,x:number,y
     }
   }
   // micro-states drawn as dots
-  let best:string|null=null,bd=MARKER_HIT;
+  let best:string|null=null,bd=markerHit();
   for(const mk of markersFor(world,scene.cn)){
     const p=P(mk.ll) as [number,number]|null;
     if(!p)continue;
@@ -347,7 +355,7 @@ function hitPanel(world:World,scene:Scene,panel:Panel,P:GeoProjection,x:number,y
   if(best)return best;
   // a few pixels off a very small island still counts
   const path=geoPath(P);
-  bd=NEAR_HIT;
+  bd=nearHit();
   for(const s of world.shapes){
     if(s.cn!==scene.cn||!s.n)continue;
     if(panel.box&&!boundsOverlapBox(s.bounds,panel.box))continue;
