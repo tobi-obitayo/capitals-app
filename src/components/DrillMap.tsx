@@ -22,11 +22,13 @@ interface Props{
   emph?:string|null;
   /** called with the country under the pointer (or null) when it changes */
   onHover?:(name:string|null)=>void;
+  /** tap/click on the map (setup: collapse menus) */
+  onTap?:()=>void;
   children?:React.ReactNode;
 }
 
 /** continent map used in the drill, quiz and results panes: fills the pane, with boxed insets for tiny islands */
-export function DrillMap({cn,fill,hl,emph=null,onHover,children}:Props){
+export function DrillMap({cn,fill,hl,emph=null,onHover,onTap,children}:Props){
   const wrap=useRef<HTMLDivElement>(null);
   const cv=useRef<HTMLCanvasElement>(null);
   const world=useWorld50();
@@ -34,6 +36,7 @@ export function DrillMap({cn,fill,hl,emph=null,onHover,children}:Props){
   latest.current={cn,fill,hl,emph,world,legend:!!children};
   const sceneRef=useRef<{key:string;scene:Scene}|null>(null);
   const lastHover=useRef<string|null>(null);
+  const tap=useRef<{x:number;y:number}|null>(null);
 
   const paint=()=>{
     const el=wrap.current,canvas=cv.current,{world:wd,cn:c,fill:f,hl:h,emph:e,legend}=latest.current;
@@ -75,9 +78,16 @@ export function DrillMap({cn,fill,hl,emph=null,onHover,children}:Props){
     if(e.pointerType==="touch")return;
     if(onHover&&lastHover.current!==null){lastHover.current=null;onHover(null)}
   };
+  const down=(e:React.PointerEvent)=>{tap.current={x:e.clientX,y:e.clientY}};
+  const up=(e:React.PointerEvent)=>{
+    const t=tap.current;tap.current=null;
+    if(!onTap||!t)return;
+    if(Math.hypot(e.clientX-t.x,e.clientY-t.y)<12)onTap();
+  };
 
   return(
-    <div className="right" ref={wrap} onPointerMove={move} onPointerLeave={leave}>
+    <div className="right" ref={wrap} onPointerMove={move} onPointerLeave={leave}
+      onPointerDown={down} onPointerUp={up}>
       <canvas ref={cv} id="mini"/>
       {children}
     </div>

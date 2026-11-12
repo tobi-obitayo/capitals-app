@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from "react";
 import {CONT,DATA,type ContinentName,type Country} from "../data";
 import {lvl,record,stats,useProgress} from "../progress";
-import {AUTO_ADVANCE_MS,autoMatches,checkAnswer,shuffle} from "../util";
+import {autoMatches,checkAnswer,shuffle} from "../util";
 import {TIMER_PRESETS,type QuizCfg} from "../quiz";
 import {lvlFill} from "../map/mini";
 import type {Prefs} from "../prefs";
@@ -46,7 +46,9 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const [sel,setSel]=useState<string|null>(null);
   const [fb,setFb]=useState<{ok:boolean;close:boolean;auto?:boolean}|null>(null);
   const [opts,setOpts]=useState<string[]>([]);
+  const [mapFocus,setMapFocus]=useState(false);
   const inputRef=useRef<HTMLInputElement>(null);
+  const iRef=useRef(0);iRef.current=i;
 
   const q=queue[i] as Country|undefined;
   const answerOf=(c:Country)=>c2k?c.c:c.k;
@@ -54,44 +56,48 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
     const pool=shuffle(DATA.filter(d=>d!==c&&d.cn===c.cn)).slice(0,3);
     return shuffle([c,...pool]).map(d=>c2k?d.c:d.k);
   };
+  const keepTyping=(clear:boolean)=>{
+    const el=inputRef.current;if(!el)return;
+    if(clear)el.value="";
+    el.readOnly=false;el.focus({preventScroll:true});
+  };
   const resetCard=(c?:Country)=>{setFlipped(false);setSel(null);setFb(null);setOpts(mi===1&&c?makeOpts(c):[])};
   const startRun=(items:Country[])=>{
     const sh=shuffle(items);
-    setQueue(sh);setI(0);setRes([]);resetCard(sh[0]);setScreen("run");
+    setQueue(sh);setI(0);setRes([]);resetCard(sh[0]);setScreen("run");setMapFocus(false);
   };
   const mark=(ok:boolean)=>{if(!q)return;setRes(r=>[...r,{it:q,ok}]);record(q.k,ok)};
   const next=()=>{
     if(i+1>=queue.length){setScreen("done");return}
     setI(i+1);resetCard(queue[i+1]);
-    if(mi===2)requestAnimationFrame(()=>{
-      if(inputRef.current){inputRef.current.value="";inputRef.current.focus()}
-    });
+    if(mi===2){keepTyping(true);requestAnimationFrame(()=>keepTyping(false))}
   };
   const flip=()=>{if(mi===0&&!flipped)setFlipped(true)};
   const gradeFlash=(ok:boolean)=>{mark(ok);next()};
   const choose=(o:string)=>{if(sel!==null||!q)return;setSel(o);mark(o===answerOf(q))};
   const accepted=q?(c2k?[q.c,...q.ac]:[q.k,...q.ak]):[];
-  const grade=(auto:boolean)=>{
+  const gradeTyped=()=>{
     if(fb||!q)return;
     const r=checkAnswer(accepted,inputRef.current?.value??"",cfg.spell);
     if(r.empty)return;
-    setFb({ok:r.ok,close:r.close,auto});mark(r.ok);
+    mark(r.ok);
+    if(r.ok){
+      const n=iRef.current+1;
+      if(n>=queue.length){setScreen("done");return}
+      setI(n);resetCard(queue[n]);
+      keepTyping(true);requestAnimationFrame(()=>keepTyping(false));
+      return;
+    }
+    setFb({ok:false,close:r.close});
   };
-  const submitTyped=(e:React.FormEvent)=>{e.preventDefault();grade(false)};
+  const submitTyped=(e:React.FormEvent)=>{e.preventDefault();gradeTyped()};
   /** spell check off: accept the moment the typed text is exactly right */
   const onTyping=(e:React.ChangeEvent<HTMLInputElement>)=>{
-    if(!cfg.spell&&!fb&&autoMatches(accepted,e.target.value))grade(true);
+    if(!cfg.spell&&!fb&&autoMatches(accepted,e.target.value))gradeTyped();
   };
-  // after an auto-check, show the green state briefly then move on by itself
-  useEffect(()=>{
-    if(!fb?.auto)return;
-    const t=setTimeout(next,AUTO_ADVANCE_MS);
-    return()=>clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[fb]);
 
   useEffect(()=>{
-    if(screen==="run"&&mi===2&&!fb)inputRef.current?.focus();
+    if(screen==="run"&&mi===2&&!fb)keepTyping(false);
   },[screen,mi,i,fb]);
 
   /* keyboard inside a run */
@@ -132,23 +138,39 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
     </div>
   );
 
+  const learnCount=batchItems(cn,batch).length;
+  const startLearn=()=>{const it=batchItems(cn,batch);if(it.length)startRun(it)};
+  const startQuiz=()=>onStartQuiz(cfg);
+
   return(
     <ModalShell title={`${cn} Capitals`} sub={sub} onClose={onClose}
-      compactMap={screen==="run"&&mi===2}
-      right={<DrillMap cn={cn} fill={fill} hl={hl}>{legend}</DrillMap>}>
+      hideMap={screen==="run"&&mi===2}
+      compactMap={false}
+      right={<DrillMap cn={cn} fill={fill} hl={hl} onTap={screen==="setup"?()=>setMapFocus(true):undefined}>{legend}</DrillMap>}>
       {screen==="setup"&&(
-        <>
-          <div className="field">
-            <Seg full label="Learn or quiz" value={effTab} onChange={v=>set({tab:v})}
-              options={[
-                {value:"learn",label:"Learn"},
-                {value:"quiz",label:"Quiz"},
-              ]}/>
+        mapFocus?(
+          <div className="setup-compact">
+            <p className="note">Tap Settings to change options.</p>
+            <button type="button" className="btn ghost" onClick={()=>setMapFocus(false)}>Settings</button>
+            {effTab==="learn"
+              ?<button className="btn" autoFocus onClick={startLearn}>Start drill · {learnCount} cards</button>
+              :<button className="btn" autoFocus onClick={startQuiz}>Start quiz · {CONT[cn].length} countries</button>}
           </div>
-          {effTab==="learn"
-            ?<LearnSetup cn={cn} prefs={prefs} set={set} onStart={()=>{const it=batchItems(cn,batch);if(it.length)startRun(it)}}/>
-            :<QuizSetup cn={cn} cfg={cfg} setCfg={c=>set({cfg:c})} onStart={()=>onStartQuiz(cfg)}/>}
-        </>
+        ):(
+          <>
+            <div className="field">
+              <Seg full label="Learn or quiz" value={effTab} onChange={v=>{set({tab:v});setMapFocus(false)}}
+                options={[
+                  {value:"learn",label:"Learn"},
+                  {value:"quiz",label:"Quiz"},
+                ]}/>
+            </div>
+            {effTab==="learn"
+              ?<LearnSetup cn={cn} prefs={prefs} set={set} onStart={startLearn}/>
+              :<QuizSetup cn={cn} cfg={cfg} setCfg={c=>set({cfg:c})} onStart={startQuiz}/>}
+            <p className="note map-tip">Tap the map to hide these settings.</p>
+          </>
+        )
       )}
 
       {screen==="run"&&q&&(
@@ -197,11 +219,11 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
 
           {mi===2&&(
             <form className="stack" onSubmit={submitTyped}>
-              <input ref={inputRef} type="text" disabled={!!fb} placeholder={c2k?"Type the capital…":"Type the country…"}
-                autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="done" onChange={onTyping}/>
+              <input ref={inputRef} type="text" readOnly={!!fb} placeholder={c2k?"Type the capital…":"Type the country…"}
+                autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="next" inputMode="text" onChange={onTyping}/>
               {fb&&(
-                <div className={"fb "+(fb.ok?"ok":"bad")}>
-                  {fb.ok?(fb.close?<>Close enough. It's spelled <b>{answerOf(q)}</b></>:"Correct!"):<>The answer is <b>{answerOf(q)}</b></>}
+                <div className={"fb bad"}>
+                  The answer is <b>{answerOf(q)}</b>
                 </div>
               )}
               {fb

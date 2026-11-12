@@ -46,7 +46,7 @@ describe("name the capital quiz",()=>{
       const input=screen.getByPlaceholderText("Type the capital…") as HTMLInputElement;
       fireEvent.change(input,{target:{value:dataByName[country].c}});
       fireEvent.submit(input.closest("form")!);
-      click(/Next|Finish/);
+      // correct answers advance immediately (no Next) so the soft keyboard can stay open
     }
     expect(await screen.findByText("100%")).toBeTruthy();
     expect(screen.getByText("Quiz complete")).toBeTruthy();
@@ -62,13 +62,27 @@ describe("name the capital quiz",()=>{
     const input=screen.getByPlaceholderText("Type the capital…") as HTMLInputElement;
     fireEvent.change(input,{target:{value:dataByName[country].c}});
     fireEvent.submit(input.closest("form")!);
-    click(/Next/);
     click("Give up");
     expect(await screen.findByText("You gave up")).toBeTruthy();
     expect(screen.getByText("4%")).toBeTruthy();            // 1 of 23
     expect(screen.getByText(/1 of 23 correct/)).toBeTruthy();
     expect(screen.getByText("Missed (22)")).toBeTruthy();
     expect(screen.getAllByText("Not reached").length).toBe(22); // everything after the first answer, including the one on screen
+  });
+
+  it("correct answers keep the input enabled and focused",()=>{
+    render(<App/>);
+    openNorthAmericaQuiz("Name the capital");
+    click(/Start quiz/);
+    const first=document.querySelector(".q h3")!.textContent!;
+    const input=screen.getByPlaceholderText("Type the capital…") as HTMLInputElement;
+    fireEvent.change(input,{target:{value:dataByName[first].c}});
+    fireEvent.submit(input.closest("form")!);
+    const again=screen.getByPlaceholderText("Type the capital…") as HTMLInputElement;
+    expect(again.readOnly).toBe(false);
+    expect(again.disabled).toBe(false);
+    expect(document.activeElement).toBe(again);
+    expect(screen.getByText("2 / 23")).toBeTruthy();
   });
 
   it("a wrong answer is shown with the correct capital and counted as missed",async()=>{
@@ -99,12 +113,13 @@ describe("auto-check (spell check off)",()=>{
     const first=document.querySelector(".q h3")!.textContent!;
     typeIn(dataByName[first].c.slice(0,3));                // not there yet
     expect(document.querySelector(".fb")).toBeNull();
-    typeIn(dataByName[first].c);                           // now exact
-    expect(document.querySelector(".fb.ok")!.textContent).toContain("Correct");
-    expect(screen.getByText("1 correct")).toBeTruthy();
-    act(()=>{vi.advanceTimersByTime(700)});
+    typeIn(dataByName[first].c);                           // now exact — advances immediately, input stays usable
     expect(screen.getByText("2 / 23")).toBeTruthy();
+    expect(screen.getByText("1 correct")).toBeTruthy();
     expect(document.querySelector(".fb")).toBeNull();
+    const input=screen.getByPlaceholderText("Type the capital…") as HTMLInputElement;
+    expect(input.readOnly).toBe(false);
+    expect(document.activeElement).toBe(input);
   });
 
   it("quiz: a near miss does not auto-check, and spell check on never auto-checks",()=>{
@@ -128,9 +143,19 @@ describe("auto-check (spell check off)",()=>{
     click(/Start drill/);
     const country=document.querySelector(".q h3")!.textContent!;
     typeIn(dataByName[country].c);
-    expect(document.querySelector(".fb.ok")).toBeTruthy();
-    act(()=>{vi.advanceTimersByTime(700)});
     expect(screen.getByText("2 / 23")).toBeTruthy();
+    expect(document.querySelector(".fb")).toBeNull();
+  });
+
+  it("tapping the setup map collapses settings to a compact start panel",()=>{
+    render(<App/>);
+    fireEvent.keyDown(window,{key:"4"});
+    expect(screen.getByText(/Tap the map to hide these settings/)).toBeTruthy();
+    fireEvent.pointerDown(document.querySelector(".right")!,{clientX:10,clientY:10,pointerId:1});
+    fireEvent.pointerUp(document.querySelector(".right")!,{clientX:10,clientY:10,pointerId:1});
+    expect(screen.getByRole("button",{name:"Settings"})).toBeTruthy();
+    expect(screen.getByRole("button",{name:/Start drill/})).toBeTruthy();
+    expect(screen.queryByText(/Tap the map to hide these settings/)).toBeNull();
   });
 
   it("learn drill: the spelling switch only shows for Type it",()=>{

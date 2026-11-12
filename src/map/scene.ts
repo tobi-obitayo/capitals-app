@@ -26,12 +26,17 @@ export interface View{k:number;tx:number;ty:number}
 export const MAX_ZOOM=16;
 
 type Corner="br"|"bl"|"tr"|"tl";
-interface InsetDef{id:string;label:string;box:[number,number,number,number];corners:Corner[]}
+interface InsetDef{
+  id:string;label:string;box:[number,number,number,number];corners:Corner[];
+  /** multiply the usual inset size (crowded island chains need more room) */
+  boost?:number;
+}
 
 /** boxed magnifications: where the islands/micro-states are too small to see or click */
 export const INSETS:Partial<Record<ContinentName,InsetDef[]>>={
   "North America":[
-    {id:"antilles",label:"Lesser Antilles",box:[-64,10,-58.5,18.5],corners:["br","tr","bl","tl"]},
+    // padded lon/lat box + boost so St Kitts→Trinidad stay tappable on phones
+    {id:"antilles",label:"Lesser Antilles",box:[-64.8,9.2,-57.8,18.9],corners:["br","tr","bl","tl"],boost:1.45},
   ],
   Europe:[
     {id:"micro",label:"Micro-states",box:[0,35.5,15,48.5],corners:["bl","br","tl","tr"]},
@@ -95,9 +100,12 @@ export function buildScene(world:World,cn:ContinentName,W:number,H:number,o:Scen
   if(defs.length){
     const land=framePoints(world,cn).map(p=>P(p)).filter((q):q is [number,number]=>!!q);
     const placed:Rect[]=[];
-    const maxW=Math.max(short?110:150,Math.min(280,W*(short?0.42:0.26)));
-    const maxH=Math.max(short?110:140,Math.min(320,H*(short?0.32:0.4)));
+    const maxW0=Math.max(short?110:150,Math.min(280,W*(short?0.42:0.26)));
+    const maxH0=Math.max(short?110:140,Math.min(320,H*(short?0.32:0.4)));
     for(const d of defs){
+      const boost=d.boost??1;
+      const maxW=Math.min(W-MARGIN*2,maxW0*boost);
+      const maxH=Math.min(H-MARGIN*2-Math.max(top,0),maxH0*boost);
       const [w0,s0,e0,n0]=d.box;
       // centre the Mercator on the box so boxes that cross the date line stay continuous
       const midLon=w0<=e0?(w0+e0)/2:((w0+e0+360)/2+540)%360-180;
@@ -108,7 +116,7 @@ export function buildScene(world:World,cn:ContinentName,W:number,H:number,o:Scen
       const aspect=Math.max(.35,(Math.max(...ps.map(p=>p[0]))-Math.min(...ps.map(p=>p[0])))/(Math.max(...ps.map(p=>p[1]))-Math.min(...ps.map(p=>p[1]))));
       // tiny geographic boxes (Singapore, Maldives) stay compact so they don't cover other land
       const span=Math.hypot((w0<=e0?e0-w0:e0+360-w0),(n0-s0));
-      const sizeCap=span<3?.55:span<12?.75:1;
+      const sizeCap=d.boost?1:span<3?.55:span<12?.75:1;
       let w=maxW*sizeCap,h=(w-12)/aspect+LABEL_H+8;
       if(h>maxH*sizeCap){h=maxH*sizeCap;w=(h-LABEL_H-8)*aspect+12}
       const at=(c:Corner,k:number):Rect=>{
