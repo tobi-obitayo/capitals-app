@@ -47,11 +47,14 @@ export function QuizResults({result,onRetry,onReview,onSetup,onClose}:Props){
     const c=dataByName[it.k];
     const good=it.status==="ok";
     return(
-      <li key={it.k} className={(good?"ok":"bad")+(hover?.k===it.k?" hot":"")}
+      <li key={it.k} className={(good?"ok":"bad")+(hover?.k===it.k?" hot":"")} tabIndex={0}
         ref={el=>{if(el)rows.current.set(it.k,el);else rows.current.delete(it.k)}}
         onPointerEnter={e=>{if(e.pointerType!=="touch")setHover({k:it.k,from:"list"})}}
         onPointerLeave={e=>{if(e.pointerType!=="touch")setHover(h=>h?.k===it.k&&h.from==="list"?null:h)}}
-        onClick={()=>select(it.k,"list")}>
+        onClick={()=>select(it.k,"list")}
+        onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();select(it.k,"list")}}}
+        onFocus={()=>setHover({k:it.k,from:"list"})}
+        onBlur={()=>setHover(h=>h?.k===it.k&&h.from==="list"?null:h)}>
         <span className="mk" aria-label={good?"Correct":"Missed"}>{good?"✓":"✗"}</span>
         <span className="who"><b>{c.k}</b><span className="cap">{c.c}</span></span>
         <span className="why">{detail(result,it)}</span>
