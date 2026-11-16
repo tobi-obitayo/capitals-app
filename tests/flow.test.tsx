@@ -6,6 +6,7 @@ import {CONT,dataByName} from "../src/data";
 import {loadWorld50} from "../src/geo";
 import {buildScene,hitTest,insetAt} from "../src/map/find";
 import {sceneFor} from "../src/map/mini";
+import {AUTO_ADVANCE_MS} from "../src/util";
 import {clickPointFor} from "./helpers";
 
 beforeAll(()=>{
@@ -37,7 +38,7 @@ function openNorthAmericaQuiz(kind:"Find the country"|"Name the capital"){
 }
 
 describe("name the capital quiz",()=>{
-  it("answering everything gives 100% and an all-green results screen",async()=>{
+  it("answering everything gives 100% and an all-green results screen",()=>{
     render(<App/>);
     openNorthAmericaQuiz("Name the capital");
     click(/Start quiz/);
@@ -46,9 +47,11 @@ describe("name the capital quiz",()=>{
       const input=screen.getByPlaceholderText("Type the capital…") as HTMLInputElement;
       fireEvent.change(input,{target:{value:dataByName[country].c}});
       fireEvent.submit(input.closest("form")!);
-      // correct answers advance immediately (no Next) so the soft keyboard can stay open
+      // the green "Correct!" state shows, and Enter (or the timer) moves on
+      expect(document.querySelector(".fb.ok")!.textContent).toContain("Correct!");
+      fireEvent.keyDown(input,{key:"Enter"});
     }
-    expect(await screen.findByText("100%")).toBeTruthy();
+    expect(screen.getByText("100%")).toBeTruthy();
     expect(screen.getByText("Quiz complete")).toBeTruthy();
     expect(screen.getByText(/23 of 23 correct/)).toBeTruthy();
     expect(screen.queryByText(/^Missed \(/)).toBeNull();
@@ -70,7 +73,7 @@ describe("name the capital quiz",()=>{
     expect(screen.getAllByText("Not reached").length).toBe(22); // everything after the first answer, including the one on screen
   });
 
-  it("correct answers keep the input enabled and focused",()=>{
+  it("correct answers show green, then keep the input enabled and focused",()=>{
     render(<App/>);
     openNorthAmericaQuiz("Name the capital");
     click(/Start quiz/);
@@ -78,6 +81,8 @@ describe("name the capital quiz",()=>{
     const input=screen.getByPlaceholderText("Type the capital…") as HTMLInputElement;
     fireEvent.change(input,{target:{value:dataByName[first].c}});
     fireEvent.submit(input.closest("form")!);
+    expect(document.querySelector(".fb.ok")).toBeTruthy();
+    fireEvent.keyDown(input,{key:"Enter"});
     const again=screen.getByPlaceholderText("Type the capital…") as HTMLInputElement;
     expect(again.readOnly).toBe(false);
     expect(again.disabled).toBe(false);
@@ -94,7 +99,8 @@ describe("name the capital quiz",()=>{
     fireEvent.change(input,{target:{value:"zzzzzz"}});
     fireEvent.submit(input.closest("form")!);
     expect(document.querySelector(".fb.bad")!.textContent).toContain(dataByName[country].c);
-    click(/Next/);
+    fireEvent.keyDown(input,{key:"Enter"});                 // Enter moves past a wrong answer
+    expect(screen.getByText("2 / 23")).toBeTruthy();
     click("Give up");
     expect(await screen.findByText(`You typed “zzzzzz”`)).toBeTruthy();
   });
@@ -104,7 +110,7 @@ describe("auto-check (spell check off)",()=>{
   const fake=()=>vi.useFakeTimers({toFake:["setInterval","clearInterval","setTimeout","clearTimeout","performance","Date"]});
   const typeIn=(v:string)=>fireEvent.change(screen.getByPlaceholderText(/Type the/) as HTMLInputElement,{target:{value:v}});
 
-  it("quiz: the right answer is accepted without Enter, then moves on by itself",()=>{
+  it("quiz: the right answer shows green, then moves on by itself",()=>{
     fake();
     render(<App/>);
     openNorthAmericaQuiz("Name the capital");
@@ -113,7 +119,10 @@ describe("auto-check (spell check off)",()=>{
     const first=document.querySelector(".q h3")!.textContent!;
     typeIn(dataByName[first].c.slice(0,3));                // not there yet
     expect(document.querySelector(".fb")).toBeNull();
-    typeIn(dataByName[first].c);                           // now exact — advances immediately, input stays usable
+    typeIn(dataByName[first].c);                           // now exact — green, then advances on its own
+    expect(document.querySelector(".fb.ok")).toBeTruthy();
+    expect(screen.getByText("1 / 23")).toBeTruthy();
+    act(()=>{vi.advanceTimersByTime(AUTO_ADVANCE_MS)});
     expect(screen.getByText("2 / 23")).toBeTruthy();
     expect(screen.getByText("1 correct")).toBeTruthy();
     expect(document.querySelector(".fb")).toBeNull();
@@ -143,6 +152,9 @@ describe("auto-check (spell check off)",()=>{
     click(/Start drill/);
     const country=document.querySelector(".q h3")!.textContent!;
     typeIn(dataByName[country].c);
+    expect(document.querySelector(".fb.ok")!.textContent).toContain("Correct!");
+    expect(screen.getByText("1 / 23")).toBeTruthy();
+    act(()=>{vi.advanceTimersByTime(AUTO_ADVANCE_MS)});
     expect(screen.getByText("2 / 23")).toBeTruthy();
     expect(document.querySelector(".fb")).toBeNull();
   });

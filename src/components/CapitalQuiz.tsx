@@ -2,7 +2,7 @@ import {useEffect,useReducer,useRef,useState} from "react";
 import type {ContinentName,Country} from "../data";
 import {record} from "../progress";
 import {useQuizClock,type ItemResult,type QuizCfg,type QuizClock,type QuizResult} from "../quiz";
-import {autoMatches,checkAnswer,shuffle} from "../util";
+import {AUTO_ADVANCE_MS,autoMatches,checkAnswer,shuffle} from "../util";
 import {ModalShell} from "./ModalShell";
 import {ClockPill} from "./ui";
 
@@ -18,7 +18,6 @@ interface Props{
 export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
   const [order]=useState(()=>shuffle(items));
   const [i,setI]=useState(0);
-  const iRef=useRef(0);iRef.current=i;
   const [,force]=useReducer((n:number)=>n+1,0);
   const res=useRef<Record<string,ItemResult>>({});
   const [fb,setFb]=useState<{ok:boolean;close:boolean;skipped:boolean}|null>(null);
@@ -51,15 +50,6 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
     el.focus({preventScroll:true});
   };
 
-  const advanceCorrect=()=>{
-    const next=iRef.current+1;
-    if(next>=order.length){finishRef.current("done");return}
-    setI(next);setFb(null);force();
-    // sync clear+focus before paint so iOS doesn't dismiss the keyboard
-    keepTyping(true);
-    requestAnimationFrame(()=>keepTyping(false));
-  };
-
   const grade=()=>{
     if(!q||fb||finished.current)return;
     const typed=inputRef.current?.value??"";
@@ -67,10 +57,9 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
     if(r.empty)return;
     res.current[q.k]={k:q.k,status:r.ok?"ok":"bad",attempts:1,typed:typed.trim()};
     record(q.k,r.ok);
-    if(r.ok){advanceCorrect();return}
-    setFb({ok:false,close:r.close,skipped:false});
+    setFb({ok:r.ok,close:r.close,skipped:false});
   };
-  const submit=(e:React.FormEvent)=>{e.preventDefault();grade()};
+  const submit=(e:React.FormEvent)=>{e.preventDefault();if(fb){next();return}grade()};
   /** spell check off: accept the moment the typed text is exactly right */
   const onTyping=(e:React.ChangeEvent<HTMLInputElement>)=>{
     if(q&&!cfg.spell&&!fb&&autoMatches([q.c,...q.ac],e.target.value))grade();
@@ -87,6 +76,15 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
     keepTyping(true);
     requestAnimationFrame(()=>keepTyping(false));
   };
+
+  // show the green "correct" state briefly, then move on while keeping the keyboard up
+  const nextRef=useRef<()=>void>(()=>{});
+  nextRef.current=next;
+  useEffect(()=>{
+    if(!fb?.ok)return;
+    const t=setTimeout(()=>nextRef.current(),AUTO_ADVANCE_MS);
+    return()=>clearTimeout(t);
+  },[fb]);
 
   useEffect(()=>{
     if(!fb)keepTyping(false);
@@ -122,12 +120,15 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
             <h3>{q.k}</h3>
           </div>
           <form className="stack" onSubmit={submit}>
-            <input ref={inputRef} type="text" readOnly={!!fb} placeholder="Type the capital…"
+            <input ref={inputRef} type="text" readOnly={!!fb&&!fb.ok} placeholder="Type the capital…"
               autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="next"
-              inputMode="text" onChange={onTyping}/>
+              inputMode="text" onChange={onTyping}
+              onKeyDown={e=>{if(fb&&e.key==="Enter"){e.preventDefault();next()}}}/>
             {fb&&(
               <div className={"fb "+(fb.ok?"ok":"bad")}>
-                {fb.skipped?"Skipped. ":""}The answer is <b>{q.c}</b>
+                {fb.ok
+                  ?(fb.close?<>Close enough. It's spelled <b>{q.c}</b></>:"Correct!")
+                  :<>{fb.skipped?"Skipped. ":""}The answer is <b>{q.c}</b></>}
               </div>
             )}
             {fb

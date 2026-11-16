@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from "react";
 import {CONT,DATA,type ContinentName,type Country} from "../data";
 import {lvl,record,stats,useProgress} from "../progress";
-import {autoMatches,checkAnswer,shuffle} from "../util";
+import {AUTO_ADVANCE_MS,autoMatches,checkAnswer,shuffle} from "../util";
 import {TIMER_PRESETS,type QuizCfg} from "../quiz";
 import {lvlFill} from "../map/mini";
 import type {Prefs} from "../prefs";
@@ -48,7 +48,6 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const [opts,setOpts]=useState<string[]>([]);
   const [mapFocus,setMapFocus]=useState(false);
   const inputRef=useRef<HTMLInputElement>(null);
-  const iRef=useRef(0);iRef.current=i;
 
   const q=queue[i] as Country|undefined;
   const answerOf=(c:Country)=>c2k?c.c:c.k;
@@ -81,20 +80,26 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
     const r=checkAnswer(accepted,inputRef.current?.value??"",cfg.spell);
     if(r.empty)return;
     mark(r.ok);
-    if(r.ok){
-      const n=iRef.current+1;
-      if(n>=queue.length){setScreen("done");return}
-      setI(n);resetCard(queue[n]);
-      keepTyping(true);requestAnimationFrame(()=>keepTyping(false));
-      return;
-    }
-    setFb({ok:false,close:r.close});
+    setFb({ok:r.ok,close:r.close});
   };
-  const submitTyped=(e:React.FormEvent)=>{e.preventDefault();gradeTyped()};
+  const submitTyped=(e:React.FormEvent)=>{
+    e.preventDefault();
+    if(fb){next();return}
+    gradeTyped();
+  };
   /** spell check off: accept the moment the typed text is exactly right */
   const onTyping=(e:React.ChangeEvent<HTMLInputElement>)=>{
     if(!cfg.spell&&!fb&&autoMatches(accepted,e.target.value))gradeTyped();
   };
+
+  // show the green "correct" state briefly, then move on while keeping the keyboard up
+  const nextRef=useRef<()=>void>(()=>{});
+  nextRef.current=next;
+  useEffect(()=>{
+    if(screen!=="run"||mi!==2||!fb?.ok)return;
+    const t=setTimeout(()=>nextRef.current(),AUTO_ADVANCE_MS);
+    return()=>clearTimeout(t);
+  },[screen,mi,fb]);
 
   useEffect(()=>{
     if(screen==="run"&&mi===2&&!fb)keepTyping(false);
@@ -114,7 +119,7 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
       }else if(mi===1){
         if(sel===null&&/^[1-4]$/.test(e.key)){const o=opts[+e.key-1];if(o)choose(o)}
         else if(sel!==null&&(e.key===" "||e.key==="Enter")){e.preventDefault();next()}
-      }else if(fb&&e.key===" "){e.preventDefault();next()}
+      }else if(fb&&(e.key===" "||e.key==="Enter")){e.preventDefault();next()}
     };
     window.addEventListener("keydown",onKey);
     return()=>window.removeEventListener("keydown",onKey);
@@ -219,11 +224,14 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
 
           {mi===2&&(
             <form className="stack" onSubmit={submitTyped}>
-              <input ref={inputRef} type="text" readOnly={!!fb} placeholder={c2k?"Type the capital…":"Type the country…"}
-                autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="next" inputMode="text" onChange={onTyping}/>
+              <input ref={inputRef} type="text" readOnly={!!fb&&!fb.ok} placeholder={c2k?"Type the capital…":"Type the country…"}
+                autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="next" inputMode="text" onChange={onTyping}
+                onKeyDown={e=>{if(fb&&e.key==="Enter"){e.preventDefault();next()}}}/>
               {fb&&(
-                <div className={"fb bad"}>
-                  The answer is <b>{answerOf(q)}</b>
+                <div className={"fb "+(fb.ok?"ok":"bad")}>
+                  {fb.ok
+                    ?(fb.close?<>Close enough. It's spelled <b>{answerOf(q)}</b></>:"Correct!")
+                    :<>The answer is <b>{answerOf(q)}</b></>}
                 </div>
               )}
               {fb
