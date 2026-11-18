@@ -1,16 +1,31 @@
-import {useEffect,useRef,useState} from "react";
-import {CONT,DATA,type ContinentName,type Country} from "../data";
-import {lvl,record,stats,useProgress} from "../progress";
-import {AUTO_ADVANCE_MS,autoMatches,checkAnswer,shuffle} from "../util";
-import {TIMER_PRESETS,type QuizCfg} from "../quiz";
-import {lvlFill} from "../map/mini";
-import type {Prefs} from "../prefs";
-import {DrillMap} from "./DrillMap";
-import {ModalShell} from "./ModalShell";
-import {Field,Kbd,Seg,Switch} from "./ui";
+import{useEffect,useRef,useState}from"react";
+import{CONT,DATA,type ContinentName,type Country}from"../data";
+import{lvl,record,stats,useProgress}from"../progress";
+import{AUTO_ADVANCE_MS,autoMatches,checkAnswer,shuffle}from"../util";
+import{TIMER_PRESETS,type QuizCfg}from"../quiz";
+import{lvlFill}from"../map/mini";
+import type{Prefs}from"../prefs";
+import{BottomDrawer}from"./Drawer";
+import{DrillMap}from"./DrillMap";
+import{ModalShell}from"./ModalShell";
+import{Field,Kbd,Seg,Switch}from"./ui";
 
-const MODE_NAMES=["Flashcards","Multiple choice","Type it"] as const;
-const MODE_SHORT=["Cards","Choice","Type"] as const;
+const MODE_NAMES=["Flashcards","Multiple choice","Type it"]as const;
+const MODE_SHORT=["Cards","Choice","Type"]as const;
+const MOBILE_MQ="(max-width:900px)";
+const SETUP_CTA_PAD=88;
+
+function useMobile(){
+  const[m,setM]=useState(()=>typeof matchMedia==="function"&&matchMedia(MOBILE_MQ).matches);
+  useEffect(()=>{
+    const mq=matchMedia(MOBILE_MQ);
+    const sync=()=>setM(mq.matches);
+    sync();
+    mq.addEventListener("change",sync);
+    return()=>mq.removeEventListener("change",sync);
+  },[]);
+  return m;
+}
 
 function batchItems(cn:ContinentName,k:string):Country[]{
   const a=CONT[cn];
@@ -21,6 +36,13 @@ function batchItems(cn:ContinentName,k:string):Country[]{
   const n=+k.slice(2);
   return a.slice(n*10,n*10+10);
 }
+
+const GearIcon=()=>(
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M12 1.5v2.2M12 20.3v2.2M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M1.5 12h2.2M20.3 12h2.2M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/>
+  </svg>
+);
 
 interface Props{
   cn:ContinentName;
@@ -33,20 +55,22 @@ interface Props{
 /** Learn drills (flashcards, multiple choice, type it) plus the entry point for quizzes. */
 export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   useProgress();
-  const {mi,dir,batch,tab,cfg}=prefs;
+  const mobile=useMobile();
+  const{mi,dir,batch,tab,cfg}=prefs;
   const set=(p:Partial<Prefs>)=>setPrefs({...prefs,...p});
   const c2k=dir==="c2k";
   const effTab=tab;
 
-  const [screen,setScreen]=useState<"setup"|"run"|"done">("setup");
-  const [queue,setQueue]=useState<Country[]>([]);
-  const [i,setI]=useState(0);
-  const [res,setRes]=useState<{it:Country;ok:boolean}[]>([]);
-  const [flipped,setFlipped]=useState(false);
-  const [sel,setSel]=useState<string|null>(null);
-  const [fb,setFb]=useState<{ok:boolean;close:boolean;auto?:boolean}|null>(null);
-  const [opts,setOpts]=useState<string[]>([]);
-  const [mapFocus,setMapFocus]=useState(false);
+  const[screen,setScreen]=useState<"setup"|"run"|"done">("setup");
+  const[queue,setQueue]=useState<Country[]>([]);
+  const[i,setI]=useState(0);
+  const[res,setRes]=useState<{it:Country;ok:boolean}[]>([]);
+  const[flipped,setFlipped]=useState(false);
+  const[sel,setSel]=useState<string|null>(null);
+  const[fb,setFb]=useState<{ok:boolean;close:boolean;auto?:boolean}|null>(null);
+  const[opts,setOpts]=useState<string[]>([]);
+  const[mapFocus,setMapFocus]=useState(false);
+  const[settingsOpen,setSettingsOpen]=useState(false);
   const inputRef=useRef<HTMLInputElement>(null);
 
   const q=queue[i] as Country|undefined;
@@ -63,7 +87,7 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const resetCard=(c?:Country)=>{setFlipped(false);setSel(null);setFb(null);setOpts(mi===1&&c?makeOpts(c):[])};
   const startRun=(items:Country[])=>{
     const sh=shuffle(items);
-    setQueue(sh);setI(0);setRes([]);resetCard(sh[0]);setScreen("run");setMapFocus(false);
+    setQueue(sh);setI(0);setRes([]);resetCard(sh[0]);setScreen("run");setMapFocus(false);setSettingsOpen(false);
   };
   const mark=(ok:boolean)=>{if(!q)return;setRes(r=>[...r,{it:q,ok}]);record(q.k,ok)};
   const next=()=>{
@@ -135,6 +159,31 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const hl=screen==="run"&&q?(c2k||revealed?q.k:null):null;
   const fill=(n:string)=>screen==="run"?"#FFFFFF":lvlFill(lvl(n));
 
+  const learnCount=batchItems(cn,batch).length;
+  const startLearn=()=>{const it=batchItems(cn,batch);if(it.length)startRun(it)};
+  const startQuiz=()=>{setSettingsOpen(false);onStartQuiz(cfg)};
+
+  const setupMap=mobile&&screen==="setup";
+  const startLabel=effTab==="learn"
+    ?`Start drill · ${learnCount} cards`
+    :`Start quiz · ${CONT[cn].length} countries`;
+  const onStart=effTab==="learn"?startLearn:startQuiz;
+
+  const settingsBody=(
+    <>
+      <div className="field">
+        <Seg full label="Learn or quiz" value={effTab} onChange={v=>{set({tab:v});setMapFocus(false)}}
+          options={[
+            {value:"learn",label:"Learn"},
+            {value:"quiz",label:"Quiz"},
+          ]}/>
+      </div>
+      {effTab==="learn"
+        ?<LearnSetup cn={cn} prefs={prefs} set={set} onStart={startLearn}/>
+        :<QuizSetup cn={cn} cfg={cfg} setCfg={c=>set({cfg:c})} onStart={startQuiz}/>}
+    </>
+  );
+
   const legend=screen!=="run"&&(
     <div className="mlegend">
       <span><i className="sw" style={{background:"#fff"}}/>Not started</span>
@@ -143,107 +192,114 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
     </div>
   );
 
-  const learnCount=batchItems(cn,batch).length;
-  const startLearn=()=>{const it=batchItems(cn,batch);if(it.length)startRun(it)};
-  const startQuiz=()=>onStartQuiz(cfg);
-
   return(
-    <ModalShell title={`${cn} Capitals`} sub={sub} onClose={onClose}
-      hideMap={screen==="run"&&mi===2}
-      compactMap={false}
-      right={<DrillMap cn={cn} fill={fill} hl={hl} onTap={screen==="setup"?()=>setMapFocus(true):undefined}>{legend}</DrillMap>}>
-      {screen==="setup"&&(
-        mapFocus?(
-          <div className="setup-compact">
-            <p className="note">Tap Settings to change options.</p>
-            <button type="button" className="btn ghost" onClick={()=>setMapFocus(false)}>Settings</button>
-            {effTab==="learn"
-              ?<button className="btn" autoFocus onClick={startLearn}>Start drill · {learnCount} cards</button>
-              :<button className="btn" autoFocus onClick={startQuiz}>Start quiz · {CONT[cn].length} countries</button>}
-          </div>
-        ):(
-          <>
-            <div className="field">
-              <Seg full label="Learn or quiz" value={effTab} onChange={v=>{set({tab:v});setMapFocus(false)}}
-                options={[
-                  {value:"learn",label:"Learn"},
-                  {value:"quiz",label:"Quiz"},
-                ]}/>
-            </div>
-            {effTab==="learn"
-              ?<LearnSetup cn={cn} prefs={prefs} set={set} onStart={startLearn}/>
-              :<QuizSetup cn={cn} cfg={cfg} setCfg={c=>set({cfg:c})} onStart={startQuiz}/>}
-            <p className="note map-tip">Tap the map to hide these settings.</p>
-          </>
-        )
-      )}
-
-      {screen==="run"&&q&&(
-        <>
-          <div className="run-top">
-            <button className="btn plain" onClick={()=>setScreen("setup")}>← Exit</button>
-            <div className="prog"><i style={{width:`${i/queue.length*100}%`}}/></div>
-            <span className="count">{i+1} / {queue.length}</span>
-          </div>
-          <div className="q">
-            {q.r&&<span className="tag">{q.r} Africa</span>}
-            <div className="kind">{c2k?"Capital of":"Which country has the capital"}</div>
-            <h3>{c2k?q.k:q.c}</h3>
-          </div>
-
-          {mi===0&&(
-            <>
-              <button key={i} className={"flip"+(flipped?" on":"")} autoFocus={!flipped} onClick={flip}>
-                {flipped?answerOf(q):"Tap to reveal"}
-              </button>
-              {flipped&&(
-                <div className="row2" style={{marginTop:12}}>
-                  <button className="btn bad" onClick={()=>gradeFlash(false)}>Missed<span className="kbd-only"><kbd>←</kbd></span></button>
-                  <button className="btn ok" autoFocus onClick={()=>gradeFlash(true)}>Got it<span className="kbd-only"><kbd>→</kbd></span></button>
-                </div>
-              )}
-            </>
-          )}
-
-          {mi===0&&<p className="kbd-hint"><Kbd>Space</Kbd> reveal · <Kbd>←</Kbd> missed · <Kbd>→</Kbd> got it</p>}
-          {mi===1&&(
-            <>
-              <div className="opts">
-                {opts.map((o,n)=>{
-                  const done=sel!==null,right=done&&o===answerOf(q),wrong=done&&sel===o&&o!==answerOf(q);
-                  return(
-                    <button key={o} className={"opt"+(right?" right":"")+(wrong?" wrong":"")} disabled={done} onClick={()=>choose(o)}>
-                      <span className="n">{n+1}</span>{o}
-                    </button>
-                  );
-                })}
+    <>
+      <ModalShell title={`${cn} Capitals`} sub={sub} onClose={onClose}
+        hideMap={screen==="run"&&mi===2}
+        compactMap={false}
+        setupMap={setupMap}
+        right={
+          <DrillMap cn={cn} fill={fill} hl={hl} showLegend={screen!=="run"} bottomPad={setupMap?SETUP_CTA_PAD:0}
+            onTap={!mobile&&screen==="setup"?()=>setMapFocus(true):undefined}>
+            {legend}
+            {setupMap&&(
+              <div className="setup-cta">
+                <button type="button" className="icon-btn setup-gear" aria-label="Settings" onClick={()=>setSettingsOpen(true)}>
+                  <GearIcon/>
+                </button>
+                <button type="button" className="btn" autoFocus onClick={onStart}>{startLabel}</button>
               </div>
-              {sel!==null&&<button className="btn" autoFocus style={{marginTop:12}} onClick={next}>{i+1>=queue.length?"Finish":"Next"}<span className="kbd-only"><kbd>↵</kbd></span></button>}
+            )}
+          </DrillMap>
+        }>
+        {screen==="setup"&&!mobile&&(
+          mapFocus?(
+            <div className="setup-compact">
+              <p className="note">Tap Settings to change options.</p>
+              <button type="button" className="btn ghost" onClick={()=>setMapFocus(false)}>Settings</button>
+              <button className="btn" autoFocus onClick={onStart}>{startLabel}</button>
+            </div>
+          ):(
+            <>
+              {settingsBody}
+              <p className="note map-tip">Tap the map to hide these settings.</p>
             </>
-          )}
+          )
+        )}
 
-          {mi===2&&(
-            <form className="stack" onSubmit={submitTyped}>
-              <input ref={inputRef} type="text" readOnly={!!fb&&!fb.ok} placeholder={c2k?"Type the capital…":"Type the country…"}
-                autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="next" inputMode="text" onChange={onTyping}
-                onKeyDown={e=>{if(fb&&e.key==="Enter"){e.preventDefault();next()}}}/>
-              {fb&&(
-                <div className={"fb "+(fb.ok?"ok":"bad")}>
-                  {fb.ok
-                    ?(fb.close?<>Close enough. It's spelled <b>{answerOf(q)}</b></>:"Correct!")
-                    :<>The answer is <b>{answerOf(q)}</b></>}
+        {screen==="run"&&q&&(
+          <>
+            <div className="run-top">
+              <button className="btn plain" onClick={()=>setScreen("setup")}>← Exit</button>
+              <div className="prog"><i style={{width:`${i/queue.length*100}%`}}/></div>
+              <span className="count">{i+1} / {queue.length}</span>
+            </div>
+            <div className="q">
+              {q.r&&<span className="tag">{q.r} Africa</span>}
+              <div className="kind">{c2k?"Capital of":"Which country has the capital"}</div>
+              <h3>{c2k?q.k:q.c}</h3>
+            </div>
+
+            {mi===0&&(
+              <>
+                <button key={i} className={"flip"+(flipped?" on":"")} autoFocus={!flipped} onClick={flip}>
+                  {flipped?answerOf(q):"Tap to reveal"}
+                </button>
+                {flipped&&(
+                  <div className="row2" style={{marginTop:12}}>
+                    <button className="btn bad" onClick={()=>gradeFlash(false)}>Missed<span className="kbd-only"><kbd>←</kbd></span></button>
+                    <button className="btn ok" autoFocus onClick={()=>gradeFlash(true)}>Got it<span className="kbd-only"><kbd>→</kbd></span></button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {mi===0&&<p className="kbd-hint"><Kbd>Space</Kbd> reveal · <Kbd>←</Kbd> missed · <Kbd>→</Kbd> got it</p>}
+            {mi===1&&(
+              <>
+                <div className="opts">
+                  {opts.map((o,n)=>{
+                    const done=sel!==null,right=done&&o===answerOf(q),wrong=done&&sel===o&&o!==answerOf(q);
+                    return(
+                      <button key={o} className={"opt"+(right?" right":"")+(wrong?" wrong":"")} disabled={done} onClick={()=>choose(o)}>
+                        <span className="n">{n+1}</span>{o}
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
-              {fb
-                ?<button type="button" className="btn" onClick={next}>{i+1>=queue.length?"Finish":"Next"}<span className="kbd-only"><kbd>↵</kbd></span></button>
-                :<button type="submit" className="btn">Check<span className="kbd-only"><kbd>↵</kbd></span></button>}
-            </form>
-          )}
-        </>
-      )}
+                {sel!==null&&<button className="btn" autoFocus style={{marginTop:12}} onClick={next}>{i+1>=queue.length?"Finish":"Next"}<span className="kbd-only"><kbd>↵</kbd></span></button>}
+              </>
+            )}
 
-      {screen==="done"&&<LearnDone res={res} onMissed={bad=>startRun(bad)} onRetry={()=>startRun(queue)} onNew={()=>setScreen("setup")} onClose={onClose}/>}
-    </ModalShell>
+            {mi===2&&(
+              <form className="stack" onSubmit={submitTyped}>
+                <input ref={inputRef} type="text" readOnly={!!fb&&!fb.ok} placeholder={c2k?"Type the capital…":"Type the country…"}
+                  autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="next" inputMode="text" onChange={onTyping}
+                  onKeyDown={e=>{if(fb&&e.key==="Enter"){e.preventDefault();next()}}}/>
+                {fb&&(
+                  <div className={"fb "+(fb.ok?"ok":"bad")}>
+                    {fb.ok
+                      ?(fb.close?<>Close enough. It's spelled <b>{answerOf(q)}</b></>:"Correct!")
+                      :<>The answer is <b>{answerOf(q)}</b></>}
+                  </div>
+                )}
+                {fb
+                  ?<button type="button" className="btn" onClick={next}>{i+1>=queue.length?"Finish":"Next"}<span className="kbd-only"><kbd>↵</kbd></span></button>
+                  :<button type="submit" className="btn">Check<span className="kbd-only"><kbd>↵</kbd></span></button>}
+              </form>
+            )}
+          </>
+        )}
+
+        {screen==="done"&&<LearnDone res={res} onMissed={bad=>startRun(bad)} onRetry={()=>startRun(queue)} onNew={()=>setScreen("setup")} onClose={onClose}/>}
+      </ModalShell>
+
+      {setupMap&&(
+        <BottomDrawer open={settingsOpen} onOpenChange={setSettingsOpen} title="Settings">
+          {settingsBody}
+        </BottomDrawer>
+      )}
+    </>
   );
 }
 

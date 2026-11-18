@@ -400,3 +400,41 @@ describe("find the country quiz",()=>{
     expect(row.className).toBe("ok");
   });
 });
+
+describe("mobile map-first setup",()=>{
+  const desktopMatchMedia=window.matchMedia;
+  beforeEach(()=>{
+    Object.defineProperty(window,"innerWidth",{value:390,configurable:true});
+    Object.defineProperty(window,"innerHeight",{value:844,configurable:true});
+    window.matchMedia=((q:string)=>({
+      matches:/max-width:\s*900px/.test(q),
+      media:q,
+      addEventListener(){},
+      removeEventListener(){},
+      addListener(){},
+      removeListener(){},
+      onchange:null,
+      dispatchEvent:()=>false,
+    })) as any;
+  });
+  afterEach(()=>{
+    Object.defineProperty(window,"innerWidth",{value:1440,configurable:true});
+    Object.defineProperty(window,"innerHeight",{value:860,configurable:true});
+    window.matchMedia=desktopMatchMedia;
+  });
+
+  it("opens as a full map with Start and gear; settings live in a drawer",()=>{
+    render(<App/>);
+    fireEvent.keyDown(window,{key:"1"});
+    expect(document.querySelector(".mbody.setup-map")).toBeTruthy();
+    expect(screen.queryByText(/Tap the map to hide/)).toBeNull();
+    expect(screen.getByRole("button",{name:/Start (drill|quiz)/})).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Settings"})).toBeTruthy();
+    // Learn/Quiz controls are not sitting in the modal body
+    expect(document.querySelector(".modal .left")).toBeNull();
+    click("Settings");
+    expect(screen.getByRole("heading",{name:"Settings"})).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Learn"})).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Quiz"})).toBeTruthy();
+  });
+});

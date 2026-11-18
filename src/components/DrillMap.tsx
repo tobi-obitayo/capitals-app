@@ -24,22 +24,27 @@ interface Props{
   onHover?:(name:string|null)=>void;
   /** tap/click on the map (setup: collapse menus) */
   onTap?:()=>void;
+  /** extra bottom inset so floating CTAs don't cover countries / island boxes */
+  bottomPad?:number;
+  /** reserve space for the progress legend chip */
+  showLegend?:boolean;
   children?:React.ReactNode;
 }
 
 /** continent map used in the drill, quiz and results panes: fills the pane, with boxed insets for tiny islands */
-export function DrillMap({cn,fill,hl,emph=null,onHover,onTap,children}:Props){
+export function DrillMap({cn,fill,hl,emph=null,onHover,onTap,bottomPad=0,showLegend,children}:Props){
   const wrap=useRef<HTMLDivElement>(null);
   const cv=useRef<HTMLCanvasElement>(null);
   const world=useWorld50();
-  const latest=useRef({cn,fill,hl,emph,world,legend:!!children});
-  latest.current={cn,fill,hl,emph,world,legend:!!children};
+  const legend=showLegend??!!children;
+  const latest=useRef({cn,fill,hl,emph,world,legend,bottomPad});
+  latest.current={cn,fill,hl,emph,world,legend,bottomPad};
   const sceneRef=useRef<{key:string;scene:Scene}|null>(null);
   const lastHover=useRef<string|null>(null);
   const tap=useRef<{x:number;y:number}|null>(null);
 
   const paint=()=>{
-    const el=wrap.current,canvas=cv.current,{world:wd,cn:c,fill:f,hl:h,emph:e,legend}=latest.current;
+    const el=wrap.current,canvas=cv.current,{world:wd,cn:c,fill:f,hl:h,emph:e,legend:lg,bottomPad:pad}=latest.current;
     if(!el||!canvas||!wd)return;
     const r=el.getBoundingClientRect();
     if(r.width<20||r.height<20)return;
@@ -48,10 +53,13 @@ export function DrillMap({cn,fill,hl,emph=null,onHover,onTap,children}:Props){
     if(canvas.width!==W||canvas.height!==H){canvas.width=W;canvas.height=H}
     const ctx=canvas.getContext("2d")!;
     ctx.setTransform(ratio,0,0,ratio,0,0);
-    // the scene (projection + inset placement) only changes with size, continent and legend
-    const key=`${c}|${Math.round(r.width)}|${Math.round(r.height)}|${legend}`;
+    // the scene (projection + inset placement) only changes with size, continent and chrome
+    const key=`${c}|${Math.round(r.width)}|${Math.round(r.height)}|${lg}|${pad}`;
     if(sceneRef.current?.key!==key){
-      const reserved=legend?[{x:0,y:r.height-64,w:Math.min(r.width,400),h:64}]:[];
+      const reserved:{x:number;y:number;w:number;h:number}[]=[];
+      const bottom=Math.max(0,pad);
+      if(lg)reserved.push({x:0,y:r.height-64-bottom,w:Math.min(r.width,400),h:64});
+      if(bottom>0)reserved.push({x:0,y:r.height-bottom,w:r.width,h:bottom});
       sceneRef.current={key,scene:sceneFor(wd,r.width,r.height,{cn:c,reserved})};
     }
     drawMini(ctx,r.width,r.height,wd,{cn:c,fill:f,hl:h,emph:e},sceneRef.current.scene);

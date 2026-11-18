@@ -310,8 +310,8 @@ export function drawScene(c:CanvasRenderingContext2D,scene:Scene,world:World,o:D
     c.save();
     if(panel.rect){
       const r=panel.rect;
-      roundRect(c,r.x,r.y,r.w,r.h,12);
-      c.shadowColor="rgba(15,23,42,.18)";c.shadowBlur=18;c.shadowOffsetY=4;
+      roundRect(c,r.x,r.y,r.w,r.h,8);
+      c.shadowColor="rgba(15,23,42,.08)";c.shadowBlur=8;c.shadowOffsetY=2;
       c.fillStyle=OCEAN;c.fill();
       c.shadowColor="transparent";
       c.clip();
@@ -322,16 +322,16 @@ export function drawScene(c:CanvasRenderingContext2D,scene:Scene,world:World,o:D
       const r=panel.rect;
       c.fillStyle=OCEAN;c.fillRect(r.x,r.y,r.w,LABEL_H);
       c.beginPath();c.moveTo(r.x,r.y+LABEL_H);c.lineTo(r.x+r.w,r.y+LABEL_H);
-      c.strokeStyle="rgba(100,116,139,.35)";c.lineWidth=1;c.stroke();
+      c.strokeStyle="rgba(100,116,139,.22)";c.lineWidth=1;c.stroke();
     }
     c.restore();
     if(panel.rect){
       const r=panel.rect;
-      roundRect(c,r.x,r.y,r.w,r.h,12);
-      c.strokeStyle=INSET_BORDER;c.lineWidth=1.4;c.stroke();
+      roundRect(c,r.x,r.y,r.w,r.h,8);
+      c.strokeStyle=INSET_BORDER;c.lineWidth=1;c.stroke();
       if(panel.label){
-        c.font="600 11px Inter,system-ui,sans-serif";c.textBaseline="middle";
-        c.fillStyle="#475569";c.fillText(panel.label.toUpperCase(),r.x+10,r.y+LABEL_H/2+1);
+        c.font="500 10px Inter,system-ui,sans-serif";c.textBaseline="middle";
+        c.fillStyle="#64748B";c.fillText(panel.label.toUpperCase(),r.x+10,r.y+LABEL_H/2+1);
       }
     }
   }

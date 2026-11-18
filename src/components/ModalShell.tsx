@@ -10,13 +10,15 @@ interface Props{
   compactMap?:boolean;
   /** typing quizzes: no map pane at all */
   hideMap?:boolean;
+  /** mobile setup: map fills the body; left column is hidden */
+  setupMap?:boolean;
   headExtra?:ReactNode;
   right:ReactNode;
   children:ReactNode;
 }
 
 /** large modal: controls on the left, map on the right */
-export function ModalShell({title,sub,onClose,dismissOnBackdrop=true,compactMap=false,hideMap=false,headExtra,right,children}:Props){
+export function ModalShell({title,sub,onClose,dismissOnBackdrop=true,compactMap=false,hideMap=false,setupMap=false,headExtra,right,children}:Props){
   useEffect(()=>{
     const vv=window.visualViewport;
     if(!vv)return;
@@ -35,19 +37,20 @@ export function ModalShell({title,sub,onClose,dismissOnBackdrop=true,compactMap=
   },[]);
 
   const bodyClass="mbody"
-    +(compactMap&&!hideMap?" compact-map":"")
-    +(hideMap?" hide-map":"");
+    +(compactMap&&!hideMap&&!setupMap?" compact-map":"")
+    +(hideMap?" hide-map":"")
+    +(setupMap&&!hideMap?" setup-map":"");
 
   return(
     <div className="overlay" onPointerDown={e=>{if(dismissOnBackdrop&&e.target===e.currentTarget)onClose()}}>
-      <div className={"modal"+(hideMap?" no-map":"")+(compactMap&&!hideMap?" compact-map":"")} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={"modal"+(hideMap?" no-map":"")+(compactMap&&!hideMap?" compact-map":"")+(setupMap?" setup-map":"")} role="dialog" aria-modal="true" aria-label={title}>
         <div className="m-head">
           <div style={{flex:1}}><h2>{title}</h2><p>{sub}</p></div>
           {headExtra}
           <button className="icon-btn" aria-label="Close" onClick={onClose}>✕</button>
         </div>
         <div className={bodyClass}>
-          <div className="left">{children}</div>
+          {!(setupMap&&!hideMap)&&<div className="left">{children}</div>}
           {!hideMap&&right}
         </div>
       </div>
