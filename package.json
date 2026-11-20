@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "shots": "node scripts/shots.mjs",
+    "dev:phone": "node scripts/dev-phone.mjs"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
@@ -31,6 +33,8 @@
     "@types/topojson-specification": "^1.0.5",
     "@vitejs/plugin-react": "^6.3.0",
     "jsdom": "^31.0.0",
+    "playwright": "^1.65.1",
+    "qrcode-terminal": "^0.12.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.7",
     "vitest": "^5.1.0"

@@ -13,3 +13,7 @@ Always install components via CLI so the code exists locally in the project for 
 ## Product/UI focus
 - Prioritize phone/mobile UX first, while also updating and maintaining the desktop view.
 - Prefer small, surgical UI diffs consistent with existing patterns; do not upgrade major versions or alter core logic without explicit approval.
+
+## Checking mobile UI (keywords)
+- `/shots` (or "shots"): `npm run shots` takes headless iPhone screenshots of the key screens (IDs `01-landing` ... `07-results`) into `shots/latest/`. Use `npm run shots -- --baseline` first to save a "before". See `.cursor/skills/shots/SKILL.md`.
+- `/phone` (or "phone preview"): `npm run dev:phone` serves the app on the LAN with a QR code for a real phone. See `.cursor/skills/phone/SKILL.md`.

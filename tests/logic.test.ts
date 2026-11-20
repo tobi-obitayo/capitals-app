@@ -3,6 +3,31 @@ import {autoMatches,checkAnswer,fmtTime} from "../src/util";
 import {CONT,CONT_NAMES,DATA,MARK} from "../src/data";
 import {buildWorld,getLanding,loadWorld50} from "../src/geo";
 import {score,type QuizResult,DEFAULT_CFG} from "../src/quiz";
+import {fitLabel,INSETS} from "../src/map/scene";
+
+describe("fitLabel (inset titles never overrun the box)",()=>{
+  const px=(t:string)=>t.length*7;   // 7px per character
+  it("keeps the full title, uppercased, when it fits",()=>{
+    expect(fitLabel(px,"Gulf of Guinea","G. of Guinea",200)).toBe("GULF OF GUINEA");
+  });
+  it("falls back to the short title",()=>{
+    expect(fitLabel(px,"Gulf of Guinea","G. of Guinea",90)).toBe("G. OF GUINEA");
+  });
+  it("cuts with an ellipsis when even the short title is too wide",()=>{
+    const t=fitLabel(px,"Gulf of Guinea","G. of Guinea",50);
+    expect(t.endsWith("…")).toBe(true);
+    expect(px(t)).toBeLessThanOrEqual(50);
+  });
+  it("cuts the full title when there is no short one",()=>{
+    const t=fitLabel(px,"Micro-states",undefined,40);
+    expect(t.endsWith("…")).toBe(true);
+    expect(px(t)).toBeLessThanOrEqual(40);
+  });
+  it("every long inset title has a short version",()=>{
+    for(const defs of Object.values(INSETS))
+      for(const d of defs!)if(d.label.length>11)expect(d.short,d.label).toBeTruthy();
+  });
+});
 
 describe("autoMatches",()=>{
   it("fires on an exact match, ignoring case, accents and punctuation",()=>{

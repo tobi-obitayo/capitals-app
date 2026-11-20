@@ -17,6 +17,7 @@ interface Props{
 
 const FLASH_MS=800;
 const QUIZ_BAR_FALLBACK=84;
+const RESET_BTN=44;
 
 /** Full-screen "tap the country" quiz on a pan/zoom map. */
 export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
@@ -37,6 +38,8 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
   const topInset=useRef(QUIZ_BAR_FALLBACK);
   const [toastTop,setToastTop]=useState(92);
   const view=useRef<View>({k:1,tx:0,ty:0});
+  const [zoomed,setZoomed]=useState(false);
+  const syncZoomed=()=>{const v=view.current;setZoomed(v.k!==1||v.tx!==0||v.ty!==0)};
   const dirty=useRef(true);
   const size=useRef({W:0,H:0});
 
@@ -99,13 +102,19 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
   const scene=useRef<Scene|null>(null);
   const layout=()=>{
     const {W,H}=size.current;
-    if(worldRef.current&&W>0)scene.current=buildScene(worldRef.current,cn,W,H,{top:topInset.current});
+    if(worldRef.current&&W>0){
+      // phones: keep islands boxes out from under the floating "reset view" button
+      const reserved=W<=700?[{x:W-RESET_BTN-16,y:topInset.current,w:RESET_BTN+16,h:RESET_BTN+16}]:undefined;
+      scene.current=buildScene(worldRef.current,cn,W,H,{top:topInset.current,reserved});
+    }
     dirty.current=true;
   };
   const zoomAt=(px:number,py:number,nk:number)=>{
     view.current=zoomView(view.current,px,py,nk);
     dirty.current=true;
+    syncZoomed();
   };
+  const resetView=()=>{view.current={k:1,tx:0,ty:0};dirty.current=true;syncZoomed()};
 
   useLayoutEffect(()=>{
     const hud=hudRef.current;
@@ -185,7 +194,7 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
       }
       if(!drag)return;
       if(!drag.onInset&&Math.hypot(x-drag.x,y-drag.y)>TAP_SLOP){drag.moved=true;canvas.classList.add("panning")}
-      if(drag.moved){view.current={...view.current,tx:drag.tx+x-drag.x,ty:drag.ty+y-drag.y};dirty.current=true}
+      if(drag.moved){view.current={...view.current,tx:drag.tx+x-drag.x,ty:drag.ty+y-drag.y};dirty.current=true;syncZoomed()}
     };
     const up=(e:PointerEvent)=>{
       const wasClick=drag&&!drag.moved&&pointers.size<=1;
@@ -273,10 +282,10 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
           {cfg.hard&&<span className="badge">Hard</span>}
         </div>
         <ClockPill clock={clock} timerConfigured={cfg.timerOn}/>
+        <button className="icon-btn qh-close" aria-label="Exit quiz without results" title="Exit quiz" onClick={onExit}>✕</button>
         <div className="qh-actions">
           <button className="btn small ghost" onClick={skip} title="Skip this country (counts as missed)">Skip<span className="kbd-only"><kbd>S</kbd></span></button>
           <button className="btn small danger" onClick={()=>finishRef.current("giveup")}>Give up</button>
-          <button className="icon-btn" aria-label="Exit quiz without results" title="Exit quiz" onClick={onExit}>✕</button>
         </div>
       </div>
 
@@ -287,8 +296,11 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
       <div className="zoom-tools">
         <button className="icon-btn" aria-label="Zoom in" onClick={()=>zoomAt(size.current.W/2,size.current.H/2,view.current.k*1.5)}>+</button>
         <button className="icon-btn" aria-label="Zoom out" onClick={()=>zoomAt(size.current.W/2,size.current.H/2,view.current.k/1.5)}>−</button>
-        <button className="icon-btn" aria-label="Reset zoom" title="Reset view" onClick={()=>{view.current={k:1,tx:0,ty:0};dirty.current=true}}>⌖</button>
+        <button className="icon-btn" aria-label="Reset zoom" title="Reset view" onClick={resetView}>⌖</button>
       </div>
+      {zoomed&&(
+        <button className="icon-btn reset-view" style={{top:toastTop}} aria-label="Reset view" title="Reset view" onClick={resetView}>⌖</button>
+      )}
       <div className="qhint">Drag to pan · pinch or scroll to zoom{scene.current&&scene.current.panels.length>1?" · small islands are in the boxes":""}</div>
     </div>
   );

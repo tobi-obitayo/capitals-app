@@ -14,6 +14,7 @@ export interface Rect{x:number;y:number;w:number;h:number}
 export interface Panel{
   id:string;
   label:string|null;
+  short?:string;
   rect:Rect|null;            // null = the main map, which fills the whole pane
   P:GeoProjection;
   s0:number;t0:[number,number];
@@ -27,7 +28,10 @@ export const MAX_ZOOM=16;
 
 type Corner="br"|"bl"|"tr"|"tl";
 interface InsetDef{
-  id:string;label:string;box:[number,number,number,number];corners:Corner[];
+  id:string;label:string;
+  /** shorter title used when the full one doesn't fit the box width */
+  short?:string;
+  box:[number,number,number,number];corners:Corner[];
   /** multiply the usual inset size (crowded island chains need more room) */
   boost?:number;
 }
@@ -36,18 +40,18 @@ interface InsetDef{
 export const INSETS:Partial<Record<ContinentName,InsetDef[]>>={
   "North America":[
     // padded lon/lat box + boost so St Kitts→Trinidad stay tappable on phones
-    {id:"antilles",label:"Lesser Antilles",box:[-64.8,9.2,-57.8,18.9],corners:["br","tr","bl","tl"],boost:1.45},
+    {id:"antilles",label:"Lesser Antilles",short:"Antilles",box:[-64.8,9.2,-57.8,18.9],corners:["br","tr","bl","tl"],boost:1.45},
   ],
   Europe:[
-    {id:"micro",label:"Micro-states",box:[0,35.5,15,48.5],corners:["bl","br","tl","tr"]},
+    {id:"micro",label:"Micro-states",short:"Micro",box:[0,35.5,15,48.5],corners:["bl","br","tl","tr"]},
   ],
   Africa:[
-    {id:"atlantic",label:"Atlantic islands",box:[-25.5,14,-22.5,17.5],corners:["tl","bl","tr","br"]},
-    {id:"gulf",label:"Gulf of Guinea",box:[5.5,-0.2,7.8,1.8],corners:["bl","tl","br","tr"]},
-    {id:"indian",label:"Indian Ocean",box:[42.5,-22,60,-3],corners:["br","tr","bl","tl"]},
+    {id:"atlantic",label:"Atlantic islands",short:"Atlantic",box:[-25.5,14,-22.5,17.5],corners:["tl","bl","tr","br"]},
+    {id:"gulf",label:"Gulf of Guinea",short:"G. of Guinea",box:[5.5,-0.2,7.8,1.8],corners:["bl","tl","br","tr"]},
+    {id:"indian",label:"Indian Ocean",short:"Indian Oc.",box:[42.5,-22,60,-3],corners:["br","tr","bl","tl"]},
   ],
   Asia:[
-    {id:"gulf",label:"Persian Gulf",box:[47.5,23.5,56.5,30.5],corners:["bl","br","tl","tr"]},
+    {id:"gulf",label:"Persian Gulf",short:"Gulf",box:[47.5,23.5,56.5,30.5],corners:["bl","br","tl","tr"]},
     {id:"maldives",label:"Maldives",box:[72.5,-1,74.2,8],corners:["bl","tl","br","tr"]},
     {id:"singapore",label:"Singapore",box:[103.5,1.1,104.2,1.55],corners:["br","tr","bl","tl"]},
   ],
@@ -61,6 +65,20 @@ export const INSETS:Partial<Record<ContinentName,InsetDef[]>>={
 const MARGIN=14;
 const DOT_AREA=30;   // px²: smaller than this in an inset, a country is drawn as a dot
 const LABEL_H=20;
+
+/**
+ * inset title that fits `maxW`: the full label, else the short one, else the short one cut with an ellipsis.
+ * `measure` returns the pixel width of a string in the font the title is drawn with.
+ */
+export function fitLabel(measure:(t:string)=>number,label:string,short:string|undefined,maxW:number):string{
+  const full=label.toUpperCase();
+  if(measure(full)<=maxW)return full;
+  const sh=short?.toUpperCase();
+  if(sh&&measure(sh)<=maxW)return sh;
+  let t=sh??full;
+  while(t.length>1&&measure(t+"…")>maxW)t=t.slice(0,-1);
+  return t.trimEnd()+"…";
+}
 
 /** the main panel's projection with the user's pan/zoom applied (insets never move) */
 export function panelProjection(p:Panel,v:View):GeoProjection{
@@ -147,7 +165,7 @@ export function buildScene(world:World,cn:ContinentName,W:number,H:number,o:Scen
         [[rect.x+6,rect.y+LABEL_H],[rect.x+rect.w-6,rect.y+rect.h-6]],
         {type:"MultiPoint",coordinates:corners},
       );
-      panels.push({id:d.id,label:d.label,rect,P:Pi,s0:Pi.scale(),t0:Pi.translate() as [number,number],box:d.box});
+      panels.push({id:d.id,label:d.label,short:d.short,rect,P:Pi,s0:Pi.scale(),t0:Pi.translate() as [number,number],box:d.box});
     }
   }
   return{cn,W,H,panels};
@@ -331,7 +349,9 @@ export function drawScene(c:CanvasRenderingContext2D,scene:Scene,world:World,o:D
       c.strokeStyle=INSET_BORDER;c.lineWidth=1;c.stroke();
       if(panel.label){
         c.font="500 10px Inter,system-ui,sans-serif";c.textBaseline="middle";
-        c.fillStyle="#64748B";c.fillText(panel.label.toUpperCase(),r.x+10,r.y+LABEL_H/2+1);
+        c.fillStyle="#64748B";
+        const width=(t:string)=>{const w=c.measureText(t).width;return typeof w==="number"?w:0};
+        c.fillText(fitLabel(width,panel.label,panel.short,r.w-20),r.x+10,r.y+LABEL_H/2+1);
       }
     }
   }

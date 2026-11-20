@@ -23,8 +23,12 @@ export function ModalShell({title,sub,onClose,dismissOnBackdrop=true,compactMap=
     const vv=window.visualViewport;
     if(!vv)return;
     const sync=()=>{
+      const root=document.documentElement.style;
       const kb=Math.max(0,window.innerHeight-vv.height-vv.offsetTop);
-      document.documentElement.style.setProperty("--kb",`${kb}px`);
+      root.setProperty("--kb",`${kb}px`);
+      // phones: the window is exactly the visible area (above the keyboard), not 100dvh
+      root.setProperty("--vvh",`${vv.height}px`);
+      root.setProperty("--vvt",`${vv.offsetTop}px`);
     };
     vv.addEventListener("resize",sync);
     vv.addEventListener("scroll",sync);
@@ -32,7 +36,8 @@ export function ModalShell({title,sub,onClose,dismissOnBackdrop=true,compactMap=
     return()=>{
       vv.removeEventListener("resize",sync);
       vv.removeEventListener("scroll",sync);
-      document.documentElement.style.removeProperty("--kb");
+      const root=document.documentElement.style;
+      root.removeProperty("--kb");root.removeProperty("--vvh");root.removeProperty("--vvt");
     };
   },[]);
 

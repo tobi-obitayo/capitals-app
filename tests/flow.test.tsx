@@ -401,6 +401,35 @@ describe("find the country quiz",()=>{
   });
 });
 
+describe("find the country top bar and zoom controls",()=>{
+  async function startFind(){
+    render(<App/>);
+    openNorthAmericaQuiz("Find the country");
+    click(/Start quiz/);
+    await waitFor(()=>expect(document.querySelector(".qloading")).toBeNull());
+  }
+
+  it("Skip and Give up share one row; the exit X sits beside the timer, not in that row",async()=>{
+    await startFind();
+    const actions=document.querySelector(".qh-actions")!;
+    const labels=[...actions.querySelectorAll("button")].map(b=>b.textContent!.replace(/S$/,"").trim());
+    expect(labels).toEqual(["Skip","Give up"]);
+    const exit=screen.getByRole("button",{name:"Exit quiz without results"});
+    expect(actions.contains(exit)).toBe(false);
+    expect(exit.classList.contains("qh-close")).toBe(true);
+  });
+
+  it("the floating Reset view button only exists while the map is zoomed",async()=>{
+    await startFind();
+    expect(screen.queryByRole("button",{name:"Reset view"})).toBeNull();
+    fireEvent.click(screen.getByRole("button",{name:"Zoom in"}));
+    const reset=await screen.findByRole("button",{name:"Reset view"});
+    expect(reset.classList.contains("reset-view")).toBe(true);
+    fireEvent.click(reset);
+    await waitFor(()=>expect(screen.queryByRole("button",{name:"Reset view"})).toBeNull());
+  });
+});
+
 describe("mobile map-first setup",()=>{
   const desktopMatchMedia=window.matchMedia;
   beforeEach(()=>{
@@ -430,6 +459,8 @@ describe("mobile map-first setup",()=>{
     expect(screen.queryByText(/Tap the map to hide/)).toBeNull();
     expect(screen.getByRole("button",{name:/Start (drill|quiz)/})).toBeTruthy();
     expect(screen.getByRole("button",{name:"Settings"})).toBeTruthy();
+    // modals are solid on phones (the stylesheet drops the blurred backdrop at this width)
+    expect(document.querySelector(".overlay")).toBeTruthy();
     // Learn/Quiz controls are not sitting in the modal body
     expect(document.querySelector(".modal .left")).toBeNull();
     click("Settings");
