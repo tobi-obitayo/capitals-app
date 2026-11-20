@@ -1,5 +1,6 @@
 import {geoContains,geoMercator,geoPath,type GeoProjection} from "d3";
-import {DATA,MARK,type ContinentName} from "../data";
+import {MARK,type Scope} from "../data";
+import {countriesIn,getSettings,shapeInScope} from "../sets";
 import type {Shape,World} from "../geo";
 import {framePoints,frameProjection} from "./frame";
 import {
@@ -21,7 +22,7 @@ export interface Panel{
   /** lon/lat box an inset magnifies: [west, south, east, north] */
   box?:[number,number,number,number];
 }
-export interface Scene{cn:ContinentName;W:number;H:number;panels:Panel[]}
+export interface Scene{cn:Scope;W:number;H:number;panels:Panel[]}
 
 export interface View{k:number;tx:number;ty:number}
 export const MAX_ZOOM=16;
@@ -37,7 +38,7 @@ interface InsetDef{
 }
 
 /** boxed magnifications: where the islands/micro-states are too small to see or click */
-export const INSETS:Partial<Record<ContinentName,InsetDef[]>>={
+export const INSETS:Partial<Record<Scope,InsetDef[]>>={
   "North America":[
     // padded lon/lat box + boost so St Kitts→Trinidad stay tappable on phones
     {id:"antilles",label:"Lesser Antilles",short:"Antilles",box:[-64.8,9.2,-57.8,18.9],corners:["br","tr","bl","tl"],boost:1.45},
@@ -57,8 +58,14 @@ export const INSETS:Partial<Record<ContinentName,InsetDef[]>>={
   ],
   Oceania:[
     {id:"micronesia",label:"Micronesia",box:[130,-2,175,12],corners:["tl","tr","bl","br"]},
-    // wraps the date line so Tuvalu (179°), Samoa and Tonga sit in one box
-    {id:"polynesia",label:"Polynesia",box:[168,-23,-168,-5],corners:["br","bl","tr","tl"]},
+    // wraps the date line so Tuvalu (179°), Samoa, Tonga, Niue and the Cook Islands sit in one box
+    {id:"polynesia",label:"Polynesia",box:[168,-23,-157,-5],corners:["br","bl","tr","tl"]},
+  ],
+  // the world pane is mostly ocean, so only the crowded chains get a box; the rest are reached by zooming
+  World:[
+    {id:"antilles",label:"Lesser Antilles",short:"Antilles",box:[-64.8,9.2,-57.8,18.9],corners:["bl","tl","br","tr"]},
+    {id:"micro",label:"Micro-states",short:"Micro",box:[0,35.5,15,48.5],corners:["tr","tl","br","bl"]},
+    {id:"polynesia",label:"Polynesia",box:[168,-23,-157,-5],corners:["br","bl","tr","tl"]},
   ],
 };
 
@@ -102,12 +109,25 @@ export interface SceneOpts{
   pad?:number;
   /** areas insets should stay out of (a legend, for example) */
   reserved?:Rect[];
+  /** world map on a tall (portrait) pane: draw it up to 2.4x the pane's width (pan sideways) instead of a small strip */
+  cover?:boolean;
 }
 
-export function buildScene(world:World,cn:ContinentName,W:number,H:number,o:SceneOpts={}):Scene{
+export function buildScene(world:World,cn:Scope,W:number,H:number,o:SceneOpts={}):Scene{
   const pad=o.pad??Math.max(24,Math.min(W,H)*.05);
   const top=o.top??0;
-  const P=frameProjection(world,cn,pad,Math.max(pad,top),W-pad,H-pad);
+  const y0=Math.max(pad,top);
+  const P=frameProjection(world,cn,pad,y0,W-pad,H-pad);
+  if(cn==="World"&&o.cover&&H>W*.9){
+    // the fitted world is wide and short; on a tall pane grow it (up to 2.4x) around the pane's centre
+    const used=P([0,84]),usedB=P([0,-58]);
+    const hUsed=used&&usedB?usedB[1]-used[1]:0;
+    const f=hUsed>0?Math.min(2.4,(H-pad-y0)/hUsed):1;
+    if(f>1.15){
+      const c:[number,number]=[W/2,(y0+H-pad)/2],t=P.translate();
+      P.scale(P.scale()*f).translate([c[0]+f*(t[0]-c[0]),c[1]+f*(t[1]-c[1])]);
+    }
+  }
   const main:Panel={id:"main",label:null,rect:null,P,s0:P.scale(),t0:P.translate() as [number,number]};
   const panels:Panel[]=[main];
 
@@ -115,6 +135,8 @@ export function buildScene(world:World,cn:ContinentName,W:number,H:number,o:Scen
   let defs=INSETS[cn]??[];
   // on short/narrow panes, fewer inset boxes so the main map stays usable
   if(short&&defs.length>2)defs=defs.slice(0,2);
+  // phones: the world map is small enough already, so no boxes on top of it (pinch to zoom instead)
+  if(cn==="World"&&short)defs=[];
   if(defs.length){
     const land=framePoints(world,cn).map(p=>P(p)).filter((q):q is [number,number]=>!!q);
     const placed:Rect[]=[];
@@ -173,16 +195,17 @@ export function buildScene(world:World,cn:ContinentName,W:number,H:number,o:Scen
 
 /* ----------------------------- helpers ----------------------------- */
 
-const markerCache=new WeakMap<World,Map<ContinentName,{n:string;ll:[number,number]}[]>>();
+const markerCache=new WeakMap<World,Map<string,{n:string;ll:[number,number]}[]>>();
 /** countries that have no polygon in this world (tiny states) get a dot at an approximate location */
-export function markersFor(world:World,cn:ContinentName){
+export function markersFor(world:World,cn:Scope){
   let byCn=markerCache.get(world);
   if(!byCn){byCn=new Map();markerCache.set(world,byCn)}
-  let list=byCn.get(cn);
+  const key=cn+"|"+getSettings().set+"|"+getSettings().cross;
+  let list=byCn.get(key);
   if(!list){
     const have=new Set(world.shapes.map(s=>s.n));
-    list=DATA.filter(d=>d.cn===cn&&!have.has(d.k)&&MARK[d.k]).map(d=>({n:d.k,ll:MARK[d.k]}));
-    byCn.set(cn,list);
+    list=countriesIn(cn).filter(d=>!have.has(d.k)&&MARK[d.k]).map(d=>({n:d.k,ll:MARK[d.k]}));
+    byCn.set(key,list);
   }
   return list;
 }
@@ -232,10 +255,10 @@ function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:Wor
   const visible=(s:Shape)=>!panel.box||boundsOverlapBox(s.bounds,panel.box);
 
   // quiet neighbours first, then this continent on top
-  for(const s of world.shapes)if(s.cn!==scene.cn&&visible(s))shape(s,NEIGHBOUR,NEIGHBOUR_STROKE,.6);
-  for(const s of world.shapes)if(s.cn===scene.cn&&!s.n&&visible(s))shape(s,TERRITORY,NEIGHBOUR_STROKE,.6);
+  for(const s of world.shapes)if(!shapeInScope(s,scene.cn)&&!(scene.cn==="World"&&s.cn==="Antarctica")&&visible(s))shape(s,NEIGHBOUR,NEIGHBOUR_STROKE,.6);
+  for(const s of world.shapes)if(shapeInScope(s,scene.cn)&&!s.n&&visible(s))shape(s,TERRITORY,NEIGHBOUR_STROKE,.6);
   for(const s of world.shapes){
-    if(s.cn!==scene.cn||!s.n||!visible(s))continue;
+    if(!shapeInScope(s,scene.cn)||!s.n||!visible(s))continue;
     const hl=o.hl===s.n;
     shape(s,hl?NAVY:o.fill(s.n),hl?NAVY:LAND_STROKE,hl?1.4:sw);
     const ov=!hl&&o.overlay?.(s.n);
@@ -245,7 +268,7 @@ function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:Wor
   // in an inset, a country still too small to see (Vatican, Monaco…) is drawn as a dot you can click
   if(inset){
     for(const s of world.shapes){
-      if(s.cn!==scene.cn||!s.n||!visible(s)||path.area(s.feat)>=DOT_AREA)continue;
+      if(!shapeInScope(s,scene.cn)||!s.n||!visible(s)||path.area(s.feat)>=DOT_AREA)continue;
       const ctr=path.centroid(s.feat) as [number,number];
       if(!isFinite(ctr[0])||!inRect(panel.rect!,ctr[0],ctr[1]))continue;
       const hl=o.hl===s.n;
@@ -277,7 +300,7 @@ function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:Wor
 
   // a highlighted country too small to see on the main map still gets a ring (insets cover most)
   if(o.hl&&!inset){
-    const hs=world.shapes.filter(s=>s.n===o.hl&&s.cn===scene.cn);
+    const hs=world.shapes.filter(s=>s.n===o.hl&&shapeInScope(s,scene.cn));
     if(hs.length){
       const area=hs.reduce((a,s)=>a+path.area(s.feat),0);
       if(area<40){
@@ -294,7 +317,7 @@ function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:Wor
 
   // lift the hovered country out of the map
   if(o.emph){
-    const es=world.shapes.filter(s=>s.n===o.emph&&s.cn===scene.cn&&visible(s));
+    const es=world.shapes.filter(s=>s.n===o.emph&&shapeInScope(s,scene.cn)&&visible(s));
     c.save();
     c.shadowColor="rgba(0,48,87,.45)";c.shadowBlur=14;c.shadowOffsetY=3;
     for(const s of es)shape(s,o.hl===s.n?NAVY:o.fill(o.emph),NAVY,2.2);
@@ -368,7 +391,7 @@ function hitPanel(world:World,scene:Scene,panel:Panel,P:GeoProjection,x:number,y
   const ll=P.invert?.([x,y]);
   if(ll&&isFinite(ll[0])&&isFinite(ll[1])){
     for(const s of world.shapes){
-      if(s.cn!==scene.cn||!s.n||!lonLatIn(s.bounds,ll[0],ll[1]))continue;
+      if(!shapeInScope(s,scene.cn)||!s.n||!lonLatIn(s.bounds,ll[0],ll[1]))continue;
       if(geoContains(s.feat as any,ll))return s.n;
     }
   }
@@ -385,7 +408,7 @@ function hitPanel(world:World,scene:Scene,panel:Panel,P:GeoProjection,x:number,y
   const path=geoPath(P);
   bd=nearHit();
   for(const s of world.shapes){
-    if(s.cn!==scene.cn||!s.n)continue;
+    if(!shapeInScope(s,scene.cn)||!s.n)continue;
     if(panel.box&&!boundsOverlapBox(s.bounds,panel.box))continue;
     if(path.area(s.feat)>80)continue;
     const c=path.centroid(s.feat);

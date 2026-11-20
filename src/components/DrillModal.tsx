@@ -1,5 +1,6 @@
 import{useEffect,useRef,useState}from"react";
-import{CONT,DATA,type ContinentName,type Country}from"../data";
+import{type Country,type Scope}from"../data";
+import{countriesIn}from"../sets";
 import{lvl,record,stats,useProgress}from"../progress";
 import{AUTO_ADVANCE_MS,autoMatches,checkAnswer,shuffle}from"../util";
 import{TIMER_PRESETS,type QuizCfg}from"../quiz";
@@ -27,8 +28,8 @@ function useMobile(){
   return m;
 }
 
-function batchItems(cn:ContinentName,k:string):Country[]{
-  const a=CONT[cn];
+function batchItems(cn:Scope,k:string):Country[]{
+  const a=countriesIn(cn);
   if(k==="all")return a;
   if(k==="rand")return shuffle(a).slice(0,10);
   if(k==="weak")return[...a].sort((x,y)=>lvl(x.k)-lvl(y.k)||Math.random()-.5).slice(0,10);
@@ -45,7 +46,7 @@ const GearIcon=()=>(
 );
 
 interface Props{
-  cn:ContinentName;
+  cn:Scope;
   prefs:Prefs;
   setPrefs:(p:Prefs)=>void;
   onClose:()=>void;
@@ -76,7 +77,7 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const q=queue[i] as Country|undefined;
   const answerOf=(c:Country)=>c2k?c.c:c.k;
   const makeOpts=(c:Country)=>{
-    const pool=shuffle(DATA.filter(d=>d!==c&&d.cn===c.cn)).slice(0,3);
+    const pool=shuffle(countriesIn("World").filter(d=>d!==c&&d.cn===c.cn)).slice(0,3);
     return shuffle([c,...pool]).map(d=>c2k?d.c:d.k);
   };
   const keepTyping=(clear:boolean)=>{
@@ -166,7 +167,7 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const setupMap=mobile&&screen==="setup";
   const startLabel=effTab==="learn"
     ?`Start drill · ${learnCount} cards`
-    :`Start quiz · ${CONT[cn].length} countries`;
+    :`Start quiz · ${countriesIn(cn).length} countries`;
   const onStart=effTab==="learn"?startLearn:startQuiz;
 
   const settingsBody=(
@@ -235,7 +236,7 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
               <span className="count">{i+1} / {queue.length}</span>
             </div>
             <div className="q">
-              {q.r&&<span className="tag">{q.r} Africa</span>}
+              {q.r&&q.cn==="Africa"&&<span className="tag">{q.r} Africa</span>}
               <div className="kind">{c2k?"Capital of":"Which country has the capital"}</div>
               <h3>{c2k?q.k:q.c}</h3>
             </div>
@@ -303,10 +304,11 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   );
 }
 
-function LearnSetup({cn,prefs,set,onStart}:{cn:ContinentName;prefs:Prefs;set:(p:Partial<Prefs>)=>void;onStart:()=>void}){
-  const a=CONT[cn];
+function LearnSetup({cn,prefs,set,onStart}:{cn:Scope;prefs:Prefs;set:(p:Partial<Prefs>)=>void;onStart:()=>void}){
+  const a=countriesIn(cn);
   const sets=Math.ceil(a.length/10);
-  const regions=[...new Set(a.map(d=>d.r).filter(Boolean))] as string[];
+  // sub-regions only exist for Africa, so they would be unlabelled on the world list
+  const regions=cn=="World"?[]:[...new Set(a.map(d=>d.r).filter(Boolean))] as string[];
   const valid=prefs.batch==="all"||prefs.batch==="rand"||prefs.batch==="weak"||
     regions.some(r=>prefs.batch==="r:"+r)||(prefs.batch.startsWith("s:")&&+prefs.batch.slice(2)<sets);
   const batch=valid?prefs.batch:"all";
@@ -353,7 +355,7 @@ function LearnSetup({cn,prefs,set,onStart}:{cn:ContinentName;prefs:Prefs;set:(p:
   );
 }
 
-function QuizSetup({cn,cfg,setCfg,onStart}:{cn:ContinentName;cfg:QuizCfg;setCfg:(c:QuizCfg)=>void;onStart:()=>void}){
+function QuizSetup({cn,cfg,setCfg,onStart}:{cn:Scope;cfg:QuizCfg;setCfg:(c:QuizCfg)=>void;onStart:()=>void}){
   const up=(p:Partial<QuizCfg>)=>setCfg({...cfg,...p});
   const minutes=Math.round(cfg.seconds/60);
   const isPreset=TIMER_PRESETS.includes(cfg.seconds);
@@ -398,7 +400,7 @@ function QuizSetup({cn,cfg,setCfg,onStart}:{cn:ContinentName;cfg:QuizCfg;setCfg:
           </div>
         </Field>
       )}
-      <button className="btn" autoFocus onClick={onStart}>Start quiz · {CONT[cn].length} countries</button>
+      <button className="btn" autoFocus onClick={onStart}>Start quiz · {countriesIn(cn).length} countries</button>
     </>
   );
 }

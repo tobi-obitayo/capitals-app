@@ -2,6 +2,7 @@ import {geoBounds,geoCentroid} from "d3";
 import * as topojson from "topojson-client";
 import type {Feature,Geometry} from "geojson";
 import {ATLAS_ALIAS,TERRITORY,CONT_NAMES,dataByName,type ContinentName} from "./data";
+import {MERGE_INTO,getSettings,inSet,type CountrySet} from "./sets";
 
 export type ContKey=ContinentName|"Antarctica";
 export type Bounds=[[number,number],[number,number]];
@@ -9,6 +10,8 @@ export type Bounds=[[number,number],[number,number]];
 export interface Shape{
   /** name from our country data, or null for territories we don't drill */
   n:string|null;
+  /** a country we know but the chosen set leaves out (and that doesn't fold into another): drawn grey */
+  off?:boolean;
   cn:ContKey|null;
   feat:Feature<Geometry>;
   bounds:Bounds;
@@ -31,13 +34,16 @@ function classifyFrancePiece(c:[number,number]):{cn:ContKey;n:string|null}{
 /**
  * Turn a world-atlas topology into shapes tagged with our country names.
  * `landing` additionally builds merged continents and border meshes for the globe/flat map
- * (110m only; unassigned shapes fall back to Antarctica there).
+ * (unassigned shapes fall back to Antarctica there). `set` decides which countries are named:
+ * ones outside it become unnamed (grey), except Somaliland and Northern Cyprus, which fold into their parent.
  */
-export function buildWorld(topo:any,opts:{landing:boolean}):World{
+export function buildWorld(topo:any,opts:{landing:boolean;set?:CountrySet;quiet?:boolean}):World{
+  const set=opts.set??getSettings().set;
   const geoms:any[]=[];
   const contOf=new Map<any,ContKey|null>();
   const nameOf=new Map<any,string|null>();
-  const add=(g:any,cn:ContKey|null,n:string|null)=>{geoms.push(g);contOf.set(g,cn);nameOf.set(g,n)};
+  const offOf=new Set<any>();
+  const add=(g:any,cn:ContKey|null,n:string|null,off=false)=>{geoms.push(g);contOf.set(g,cn);nameOf.set(g,n);if(off)offOf.add(g)};
 
   for(const g of topo.objects.countries.geometries){
     const raw:string=g.properties.name,dn=ATLAS_ALIAS[raw]||raw;
@@ -51,14 +57,15 @@ export function buildWorld(topo:any,opts:{landing:boolean}):World{
         add(poly,k.cn,k.n);
       }
     }else{
-      if(!cn&&opts.landing)console.warn("unassigned map shape:",raw);
-      add(g,cn??(opts.landing?"Antarctica":null),hit?dn:null);
+      if(!cn&&opts.landing&&!opts.quiet)console.warn("unassigned map shape:",raw);
+      const named=hit&&inSet(hit,set)?dn:hit?(MERGE_INTO[dn]??null):null;
+      add(g,cn??(opts.landing?"Antarctica":null),named,!!hit&&!named);
     }
   }
 
   const shapes:Shape[]=geoms.map(g=>{
     const feat=topojson.feature(topo,g) as Feature<Geometry>;
-    return{n:nameOf.get(g)??null,cn:contOf.get(g)??null,feat,bounds:geoBounds(feat as any) as Bounds};
+    return{n:nameOf.get(g)??null,off:offOf.has(g)||undefined,cn:contOf.get(g)??null,feat,bounds:geoBounds(feat as any) as Bounds};
   });
   const world:World={shapes};
 
@@ -76,10 +83,12 @@ export function buildWorld(topo:any,opts:{landing:boolean}):World{
 }
 
 let landing:World|null=null;
-let world50:World|null=null;
-let world50Promise:Promise<World>|null=null;
+const world50=new Map<CountrySet,World>();
+const world50Promise=new Map<CountrySet,Promise<World>>();
+const landing50=new Map<CountrySet,World>();
+const landing50Promise=new Map<CountrySet,Promise<World>>();
 
-/** small 110m world for the globe/flat landing map (bundled, built once) */
+/** small 110m world for the globe landing map (bundled, built once) */
 export async function getLanding():Promise<World>{
   if(!landing){
     const topo=(await import("world-atlas/countries-110m.json")).default;
@@ -88,13 +97,36 @@ export async function getLanding():Promise<World>{
   return landing;
 }
 
-/** detailed 50m world for drill and quiz maps (loaded on demand, cached) */
-export function loadWorld50():Promise<World>{
-  if(world50)return Promise.resolve(world50);
-  world50Promise??=import("world-atlas/countries-50m.json").then(m=>{
-    world50=buildWorld(m.default,{landing:false});
-    return world50;
-  });
-  return world50Promise;
+/** detailed 50m world for drill and quiz maps (loaded on demand, cached per country set) */
+export function loadWorld50(set:CountrySet=getSettings().set):Promise<World>{
+  const have=world50.get(set);
+  if(have)return Promise.resolve(have);
+  let p=world50Promise.get(set);
+  if(!p){
+    p=import("world-atlas/countries-50m.json").then(m=>{
+      const w=buildWorld(m.default,{landing:false,set});
+      world50.set(set,w);
+      return w;
+    });
+    world50Promise.set(set,p);
+  }
+  return p;
 }
-export const peekWorld50=()=>world50;
+export const peekWorld50=(set:CountrySet=getSettings().set)=>world50.get(set)??null;
+
+/** detailed world with merged continents and border meshes: the flat map zooms into it (loaded on demand, cached per set) */
+export function loadLanding50(set:CountrySet=getSettings().set):Promise<World>{
+  const have=landing50.get(set);
+  if(have)return Promise.resolve(have);
+  let p=landing50Promise.get(set);
+  if(!p){
+    p=import("world-atlas/countries-50m.json").then(m=>{
+      const w=buildWorld(m.default,{landing:true,set,quiet:true});
+      landing50.set(set,w);
+      return w;
+    });
+    landing50Promise.set(set,p);
+  }
+  return p;
+}
+export const peekLanding50=(set:CountrySet=getSettings().set)=>landing50.get(set)??null;

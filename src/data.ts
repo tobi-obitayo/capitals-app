@@ -2,8 +2,14 @@
 export const CONT_NAMES=["Africa","Europe","Asia","North America","South America","Oceania"] as const;
 export type ContinentName=typeof CONT_NAMES[number];
 
-export interface Country{k:string;c:string;ak:string[];ac:string[];r?:string;cn:ContinentName}
-type Entry=Omit<Country,"cn">;
+/** a quiz can cover one continent or the whole world */
+export type Scope=ContinentName|"World";
+export const WORLD="World" as const;
+
+/** un: 193 UN members · obs: UN General Assembly observers · other: states with limited recognition */
+export type Tier="un"|"obs"|"other";
+export interface Country{k:string;c:string;ak:string[];ac:string[];r?:string;cn:ContinentName;tier:Tier}
+type Entry=Omit<Country,"cn"|"tier">;
 const E=(k:string,c:string,ak:string[]=[],ac:string[]=[],r?:string):Entry=>({k,c,ak,ac,r});
 
 const RAW:Record<ContinentName,Entry[]>={
@@ -31,14 +37,28 @@ const RAW:Record<ContinentName,Entry[]>={
  ]
 };
 
-export const CONT=Object.fromEntries(CONT_NAMES.map(cn=>[cn,RAW[cn].map(d=>({...d,cn}) as Country)])) as Record<ContinentName,Country[]>;
+/** states beyond the 195 (Wikipedia's "other states"). Abkhazia, South Ossetia and Transnistria have no shape in the map data, so they are left out. */
+const EXTRA:Partial<Record<ContinentName,Entry[]>>={
+  Africa:[E("Western Sahara","Laayoune",[],["El Aaiún","El Aaiun","Laâyoune"],"North"),E("Somaliland","Hargeisa",[],[],"East")],
+  Europe:[E("Kosovo","Pristina",[],["Prishtina","Priština"]),E("Northern Cyprus","North Nicosia",["TRNC"],["Nicosia","Lefkoşa","Lefkosa"])],
+  Asia:[E("Taiwan","Taipei",["Republic of China","ROC"])],
+  Oceania:[E("Cook Islands","Avarua"),E("Niue","Alofi")]
+};
+const OBSERVERS=new Set(["Vatican City","Palestine"]);
+const mk=(cn:ContinentName,e:Entry,tier?:Tier):Country=>({...e,cn,tier:tier??(OBSERVERS.has(e.k)?"obs":"un")});
+
+/** UN members + observers (195), the default set. Use `countriesIn` (sets.ts) for whatever the player picked. */
+export const CONT=Object.fromEntries(CONT_NAMES.map(cn=>[cn,RAW[cn].map(d=>mk(cn,d))])) as Record<ContinentName,Country[]>;
 export const DATA:Country[]=CONT_NAMES.flatMap(cn=>CONT[cn]);
-export const dataByName:Record<string,Country>=Object.fromEntries(DATA.map(d=>[d.k,d]));
+/** every state we know, 202 */
+export const ALL_CONT=Object.fromEntries(CONT_NAMES.map(cn=>[cn,[...CONT[cn],...(EXTRA[cn]??[]).map(d=>mk(cn,d,"other"))]])) as Record<ContinentName,Country[]>;
+export const ALL:Country[]=CONT_NAMES.flatMap(cn=>ALL_CONT[cn]);
+export const dataByName:Record<string,Country>=Object.fromEntries(ALL.map(d=>[d.k,d]));
 
 // atlas name -> data name where they differ
-export const ATLAS_ALIAS:Record<string,string>={"Bosnia and Herz.":"Bosnia and Herzegovina","Central African Rep.":"Central African Republic","Dem. Rep. Congo":"DR Congo","Dominican Rep.":"Dominican Republic","Eq. Guinea":"Equatorial Guinea","eSwatini":"Eswatini","Gambia":"The Gambia","Macedonia":"North Macedonia","Congo":"Rep. of the Congo","S. Sudan":"South Sudan","Vatican":"Vatican City","Marshall Is.":"Marshall Islands","São Tomé and Principe":"São Tomé and Príncipe","St. Vin. and Gren.":"Saint Vincent and the Grenadines","St. Kitts and Nevis":"Saint Kitts and Nevis","Antigua and Barb.":"Antigua and Barbuda","Solomon Is.":"Solomon Islands","United States of America":"United States"};
+export const ATLAS_ALIAS:Record<string,string>={"W. Sahara":"Western Sahara","N. Cyprus":"Northern Cyprus","Cook Is.":"Cook Islands","Bosnia and Herz.":"Bosnia and Herzegovina","Central African Rep.":"Central African Republic","Dem. Rep. Congo":"DR Congo","Dominican Rep.":"Dominican Republic","Eq. Guinea":"Equatorial Guinea","eSwatini":"Eswatini","Gambia":"The Gambia","Macedonia":"North Macedonia","Congo":"Rep. of the Congo","S. Sudan":"South Sudan","Vatican":"Vatican City","Marshall Is.":"Marshall Islands","São Tomé and Principe":"São Tomé and Príncipe","St. Vin. and Gren.":"Saint Vincent and the Grenadines","St. Kitts and Nevis":"Saint Kitts and Nevis","Antigua and Barb.":"Antigua and Barbuda","Solomon Is.":"Solomon Islands","United States of America":"United States"};
 // map shapes that are not drilled, assigned to a continent for highlighting only
-export const TERRITORY:Record<string,string>={"W. Sahara":"Africa","Somaliland":"Africa","Kosovo":"Europe","N. Cyprus":"Europe","Taiwan":"Asia","Greenland":"North America","Puerto Rico":"North America","U.S. Virgin Is.":"North America","Anguilla":"North America","Cayman Is.":"North America","Bermuda":"North America","British Virgin Is.":"North America","Turks and Caicos Is.":"North America","Montserrat":"North America","Aruba":"North America","Curaçao":"North America","St. Pierre and Miquelon":"North America","St-Martin":"North America","St-Barthélemy":"North America","Sint Maarten":"North America","Falkland Is.":"South America","New Caledonia":"Oceania","Fr. S. Antarctic Lands":"Antarctica","Antarctica":"Antarctica"};
+export const TERRITORY:Record<string,string>={"Greenland":"North America","Puerto Rico":"North America","U.S. Virgin Is.":"North America","Anguilla":"North America","Cayman Is.":"North America","Bermuda":"North America","British Virgin Is.":"North America","Turks and Caicos Is.":"North America","Montserrat":"North America","Aruba":"North America","Curaçao":"North America","St. Pierre and Miquelon":"North America","St-Martin":"North America","St-Barthélemy":"North America","Sint Maarten":"North America","Falkland Is.":"South America","New Caledonia":"Oceania","Fr. S. Antarctic Lands":"Antarctica","Antarctica":"Antarctica"};
 
 
 // approximate [lon, lat] for countries too small to exist in the 110m map
@@ -54,6 +74,8 @@ export const MINI:Record<string,[number,number][]>={
  Asia:[[25,-11],[146,-11],[146,55],[25,55]],
  "North America":[[-170,6],[-50,6],[-50,72],[-170,72]],
  "South America":[[-82,13],[-34,13],[-34,-56],[-82,-56]],
- Oceania:[[110,12],[-150,12],[-150,-48],[110,-48]]
+ Oceania:[[110,12],[-150,12],[-150,-48],[110,-48]],
+ // whole world without Antarctica
+ World:[[-180,84],[180,84],[180,-58],[-180,-58]]
 };
 export const MINI_ROT:Record<string,[number,number]>={Oceania:[-150,0]};

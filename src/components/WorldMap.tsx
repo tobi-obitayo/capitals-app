@@ -1,9 +1,17 @@
 import {useEffect,useRef} from "react";
-import {geoNaturalEarth1,geoOrthographic,geoPath,type GeoProjection} from "d3";
-import {getLanding,type World} from "../geo";
-import {drawLanding,pickContinent,vq} from "../map/landing";
-import {stats,useProgress} from "../progress";
-import type {ContinentName} from "../data";
+import {geoOrthographic,type GeoProjection} from "d3";
+import {getLanding,loadLanding50,peekLanding50,type World} from "../geo";
+import {drawLanding,elephantHit,pickContinent,vq} from "../map/landing";
+import {
+  DETAIL_SCALE,drawFlat,FLAT_HOME,flatLayout,LABEL_ZOOM,makeFlatProjection,pickCountryFlat,unwrapFlatX,zoomFlatAt,
+  type FlatLayout,type FlatView,
+} from "../map/flat";
+import {lvl,stats,useProgress} from "../progress";
+import {lvlFill} from "../map/palette";
+import {dataByName,type ContinentName} from "../data";
+import {useSettings} from "../sets";
+import {unlockWorld,useWorldUnlocked,worldUnlocked} from "../unlock";
+import {toast} from "sonner";
 import {isCoarsePointer,TAP_SLOP} from "../util";
 
 export type View="globe"|"flat";
@@ -18,6 +26,8 @@ interface Props{
   /** continent highlighted from outside (e.g. hovering the list) */
   highlight:ContinentName|null;
   onPick:(cn:ContinentName)=>void;
+  /** flat map, zoomed in: the country that was tapped (null clears it) */
+  onCountry:(name:string|null)=>void;
   onTouch:()=>void;
 }
 
@@ -28,7 +38,9 @@ interface State{
   view:View;rotate:[number,number,number];zoom:number;inset:number;
   hover:ContinentName|null;lastHv:ContinentName|null;
   dragging:boolean;lastTouch:number;dirty:boolean;introStart:number|null;
-  applyView:(v:View)=>void;reset:()=>void;
+  /** flat map pan/zoom and its current layout */
+  flat:FlatView;lay:FlatLayout|null;hoverCountry:string|null;
+  applyView:(v:View)=>void;reset:()=>void;zoomBy:(f:number)=>void;ensureDetail:()=>void;
 }
 
 /** Full-bleed globe / flat world map. Imperative canvas inside, React props around it. */
@@ -38,10 +50,15 @@ export function WorldMap(props:Props){
   const pr=useRef(props);pr.current=props;
   const S=useRef<State>({
     view:props.view,rotate:[HOME[0]-58,HOME[1],0],zoom:1,inset:0,hover:null,lastHv:null,
-    dragging:false,lastTouch:0,dirty:true,introStart:null,applyView:()=>{},reset:()=>{},
+    dragging:false,lastTouch:0,dirty:true,introStart:null,flat:{...FLAT_HOME},lay:null,hoverCountry:null,
+    applyView:()=>{},reset:()=>{},zoomBy:()=>{},ensureDetail:()=>{},
   });
   const version=useProgress();
-  useEffect(()=>{S.current.dirty=true},[version,props.highlight]);
+  const{set}=useSettings();
+  const worldOpen=useWorldUnlocked();
+  useEffect(()=>{S.current.dirty=true},[version,props.highlight,worldOpen]);
+  // another country set gives other names, so fetch (and then redraw with) that detailed map
+  useEffect(()=>{if(S.current.view==="flat")S.current.ensureDetail();S.current.dirty=true},[set]);
 
   useEffect(()=>{
     const canvas=canvasRef.current!,ctx=canvas.getContext("2d")!,label=labelRef.current!;
@@ -49,15 +66,17 @@ export function WorldMap(props:Props){
     const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
     s.rotate=[HOME[0]-(reduced?0:58),HOME[1],0];
     let world:World|null=null,W=0,H=0,dpr=1,raf=0,alive=true;
-    const flat=geoNaturalEarth1();
+    const flat=makeFlatProjection();
     const globe=geoOrthographic().clipAngle(90).precision(.4);
     const proj=():GeoProjection=>s.view==="flat"?flat:globe;
+    const zoomLevel=()=>s.lay?.view.zoom??1;
+    const countryMode=()=>s.view==="flat"&&zoomLevel()>=LABEL_ZOOM;
 
     const setCursor=(c:""|"grab"|"dragging"|"pointer")=>{
       canvas.classList.remove("grab","dragging","pointer");
       if(c)canvas.classList.add(c);
     };
-    const homeCursor=()=>setCursor(s.view==="globe"?"grab":"");
+    const homeCursor=()=>setCursor("grab");
 
     const introK=()=>{
       if(s.introStart==null)return .84;
@@ -69,12 +88,9 @@ export function WorldMap(props:Props){
 
     /** place both projections for the current size and free space */
     const layout=()=>{
-      const AH=availH(),sph={type:"Sphere"} as const;
-      flat.fitWidth(W-16,sph);
-      let b=geoPath(flat).bounds(sph);
-      if(b[1][1]-b[0][1]>AH-16){flat.fitHeight(AH-16,sph);b=geoPath(flat).bounds(sph)}
-      const t=flat.translate();
-      flat.translate([t[0]+W/2-(b[0][0]+b[1][0])/2,t[1]+AH/2-(b[0][1]+b[1][1])/2]);
+      const AH=availH();
+      s.lay=flatLayout(flat,W,AH,s.flat);
+      s.flat=s.lay.view;
       globe.translate([W/2,AH/2]).scale(globeScale()).rotate(s.rotate);
       s.dirty=true;
     };
@@ -89,8 +105,17 @@ export function WorldMap(props:Props){
       s.dirty=false;
       if(!world)return;
       ctx.setTransform(dpr,0,0,dpr,0,0);
+      if(s.view==="flat"&&s.lay){
+        const detail=peekLanding50();
+        const wd=detail&&s.lay.abs>=DETAIL_SCALE?detail:world;
+        drawFlat(ctx,{
+          W,H,lay:s.lay,world:wd,detail:countryMode()?detail:null,hover:hv(),hoverCountry:s.hoverCountry,
+          frac:cn=>stats(cn).frac,level:lvl,lvlFill,
+        });
+        return;
+      }
       if(s.view==="globe")globe.translate([W/2,availH()/2]).rotate(s.rotate).scale(globeScale());
-      drawLanding(ctx,world,{W,H,view:s.view,proj:proj(),hover:hv(),frac:cn=>stats(cn).frac});
+      drawLanding(ctx,world,{W,H,view:s.view,proj:proj(),hover:hv(),frac:cn=>stats(cn).frac,elephant:!worldUnlocked()});
     };
 
     /* ---- label ---- */
@@ -101,13 +126,29 @@ export function WorldMap(props:Props){
       label.innerHTML=`<b>${cn}</b>${st.total} countries · ${st.mastered} mastered · ${verb} to drill`;
       label.hidden=false;label.style.left=e.clientX+"px";label.style.top=e.clientY+"px";
     };
+    const showCountryLabel=(k:string|null,e?:PointerEvent)=>{
+      const d=k?dataByName[k]:null;
+      if(!d||!e||pr.current.paused){label.hidden=true;return}
+      const verb=isCoarsePointer()?"tap":"click";
+      label.innerHTML=`<b>${d.k}</b>${d.c} · ${d.cn} · ${verb} for details`;
+      label.hidden=false;label.style.left=e.clientX+"px";label.style.top=e.clientY+"px";
+    };
     const setHover=(cn:ContinentName|null)=>{if(s.hover!==cn){s.hover=cn;s.dirty=true}};
+    const setHoverCountry=(k:string|null)=>{if(s.hoverCountry!==k){s.hoverCountry=k;s.dirty=true}};
     const local=(e:PointerEvent):[number,number]=>{const r=canvas.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
-    const pick=(x:number,y:number)=>world?pickContinent(world,proj(),s.view,x,y):null;
+    const pick=(x:number,y:number)=>{
+      if(!world)return null;
+      if(s.view==="flat"&&s.lay)return pickContinent(world,flat,"flat",unwrapFlatX(s.lay,x),y);
+      return pickContinent(world,proj(),s.view,x,y);
+    };
+    const pickCountry=(x:number,y:number)=>{
+      const detail=peekLanding50();
+      return detail&&s.lay?pickCountryFlat(detail,s.lay,x,y):null;
+    };
 
     /* ---- pointer: hover, click, trackball drag, pinch zoom ---- */
     const pointers=new Map<number,[number,number]>();
-    let drag:null|{pt:[number,number];moved:boolean;v0?:[number,number,number];q0?:ReturnType<typeof vq.fromEuler>;r0?:[number,number,number]}=null;
+    let drag:null|{pt:[number,number];moved:boolean;v0?:[number,number,number];q0?:ReturnType<typeof vq.fromEuler>;r0?:[number,number,number];f0?:FlatView}=null;
     let pinch:null|{dist:number;zoom:number}=null;
     const midDist=()=>{
       const pts=[...pointers.values()];
@@ -120,13 +161,13 @@ export function WorldMap(props:Props){
       const pt=local(e);
       pointers.set(e.pointerId,pt);
       canvas.setPointerCapture(e.pointerId);
-      if(pointers.size>=2&&s.view==="globe"){
+      if(pointers.size>=2){
         drag=null;s.dragging=false;
         const m=midDist();
-        if(m&&m.dist>0)pinch={dist:m.dist,zoom:s.zoom};
+        if(m&&m.dist>0)pinch={dist:m.dist,zoom:s.view==="globe"?s.zoom:s.flat.zoom};
         showLabel(null);return;
       }
-      pinch=null;drag={pt,moved:false};
+      pinch=null;drag={pt,moved:false,f0:{...s.flat}};
       if(s.view==="globe"){
         globe.rotate(s.rotate);
         const ll=globe.invert!(pt) as [number,number];
@@ -137,10 +178,19 @@ export function WorldMap(props:Props){
       if(pr.current.paused)return;
       const pt=local(e);
       if(pointers.has(e.pointerId))pointers.set(e.pointerId,pt);
-      if(pointers.size>=2&&s.view==="globe"&&pinch&&pinch.dist>0){
+      if(pointers.size>=2&&pinch&&pinch.dist>0){
         const m=midDist();
         if(m){
-          s.zoom=Math.max(.7,Math.min(3,pinch.zoom*(m.dist/pinch.dist)));
+          if(s.view==="flat"&&s.lay){s.flat=zoomFlatAt(s.lay,m.mid[0],m.mid[1],pinch.zoom*(m.dist/pinch.dist));pr.current.onCountry(null)}
+          else s.zoom=Math.max(.7,Math.min(3,pinch.zoom*(m.dist/pinch.dist)));
+          layout();s.lastTouch=performance.now();
+        }
+        showLabel(null);return;
+      }
+      if(drag&&s.view==="flat"){
+        if(!drag.moved&&Math.hypot(pt[0]-drag.pt[0],pt[1]-drag.pt[1])>TAP_SLOP){drag.moved=true;s.dragging=true;setCursor("dragging");pr.current.onCountry(null)}
+        if(drag.moved&&drag.f0){
+          s.flat={...drag.f0,px:drag.f0.px+pt[0]-drag.pt[0],py:drag.f0.py+pt[1]-drag.pt[1]};
           layout();s.lastTouch=performance.now();
         }
         showLabel(null);return;
@@ -154,10 +204,19 @@ export function WorldMap(props:Props){
         }
         showLabel(null);return;
       }
+      if(countryMode()){
+        // zoomed in: hover works on single countries
+        const k=pickCountry(pt[0],pt[1]);
+        setHover(null);setHoverCountry(k);showCountryLabel(k,e);
+        if(k)pr.current.onTouch();
+        setCursor(k?"pointer":"grab");
+        return;
+      }
+      setHoverCountry(null);
       const cn=pick(pt[0],pt[1]);
       setHover(cn);showLabel(cn,e);
       if(cn)pr.current.onTouch();
-      setCursor(cn?"pointer":s.view==="globe"?"grab":"");
+      setCursor(cn?"pointer":"grab");
     };
     const onUp=(e:PointerEvent)=>{
       const wasClick=drag&&!drag.moved&&pointers.size<=1;
@@ -166,14 +225,24 @@ export function WorldMap(props:Props){
       if(pointers.size===0){
         const pt=local(e);
         drag=null;s.dragging=false;s.lastTouch=performance.now();
-        if(wasClick&&!pr.current.paused){const cn=pick(pt[0],pt[1]);if(cn)pr.current.onPick(cn)}
+        if(wasClick&&!pr.current.paused){
+          // the hidden circle on Elephant Island (globe only) opens World
+          if(s.view==="globe"&&!worldUnlocked()&&elephantHit(globe,pt[0],pt[1],isCoarsePointer()?22:12)){
+            if(unlockWorld())toast("World unlocked",{description:"Open it from the continent list."});
+            homeCursor();return;
+          }
+          if(countryMode())pr.current.onCountry(pickCountry(pt[0],pt[1]));
+          else{const cn=pick(pt[0],pt[1]);if(cn)pr.current.onPick(cn)}
+        }
         homeCursor();
-      }else if(pointers.size===1&&s.view==="globe"){
+      }else if(pointers.size===1){
         const pt=[...pointers.values()][0];
-        drag={pt,moved:false};
-        globe.rotate(s.rotate);
-        const ll=globe.invert!(pt) as [number,number];
-        drag.v0=vq.cart(ll);drag.q0=vq.fromEuler(s.rotate);drag.r0=[...s.rotate];
+        drag={pt,moved:false,f0:{...s.flat}};
+        if(s.view==="globe"){
+          globe.rotate(s.rotate);
+          const ll=globe.invert!(pt) as [number,number];
+          drag.v0=vq.cart(ll);drag.q0=vq.fromEuler(s.rotate);drag.r0=[...s.rotate];
+        }
       }
     };
     const onCancel=(e:PointerEvent)=>{
@@ -181,10 +250,17 @@ export function WorldMap(props:Props){
       if(pointers.size<2)pinch=null;
       if(pointers.size===0){drag=null;s.dragging=false;homeCursor()}
     };
-    const onLeave=()=>{if(!drag&&pointers.size===0){setHover(null);showLabel(null)}};
+    const onLeave=()=>{if(!drag&&pointers.size===0){setHover(null);setHoverCountry(null);showLabel(null)}};
     const onWheel=(e:WheelEvent)=>{
-      if(s.view!=="globe"||pr.current.paused)return;
+      if(pr.current.paused)return;
       e.preventDefault();
+      if(s.view==="flat"&&s.lay){
+        const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+        if(Math.abs(e.deltaX)>Math.abs(e.deltaY)&&!e.ctrlKey)s.flat={...s.flat,px:s.flat.px-e.deltaX};   // sideways trackpad swipe pans
+        else s.flat=zoomFlatAt(s.lay,x,y,s.flat.zoom*Math.exp(-e.deltaY*(e.ctrlKey?.01:.0015)));
+        pr.current.onCountry(null);label.hidden=true;
+        layout();return;
+      }
       s.zoom=Math.max(.7,Math.min(3,s.zoom*Math.exp(-e.deltaY*.0015)));
       layout();s.lastTouch=performance.now();
     };
@@ -202,12 +278,19 @@ export function WorldMap(props:Props){
       canvas.classList.add("fade");
       setTimeout(()=>{
         if(!alive)return;
-        s.view=v;s.hover=null;label.hidden=true;
+        s.view=v;s.hover=null;s.hoverCountry=null;label.hidden=true;
+        if(v==="flat")s.ensureDetail();
         homeCursor();layout();draw();
         requestAnimationFrame(()=>canvas.classList.remove("fade"));
       },150);
     };
-    s.reset=()=>{s.rotate=[...HOME];s.zoom=1;layout()};
+    s.reset=()=>{s.rotate=[...HOME];s.zoom=1;s.flat={...FLAT_HOME};layout()};
+    s.zoomBy=(f)=>{
+      if(!s.lay)return;
+      s.flat=zoomFlatAt(s.lay,W/2,availH()/2,s.flat.zoom*f);
+      pr.current.onCountry(null);layout();
+    };
+    s.ensureDetail=()=>{loadLanding50().then(()=>{if(alive)s.dirty=true})};
 
     /* ---- frame loop ---- */
     const frame=(t:number)=>{
@@ -265,6 +348,15 @@ export function WorldMap(props:Props){
     <>
       <canvas ref={canvasRef} id="map" className="intro" aria-label="World map. Press 1 to 6 to open a continent, or press C for the continent list."/>
       <div ref={labelRef} className="label" hidden/>
+      {props.view==="flat"&&!props.paused&&props.inset===0&&(
+        <div className="tools flat-tools">
+          <button className="icon-btn" aria-label="Zoom in" title="Zoom in" onClick={()=>S.current.zoomBy(1.6)}>+</button>
+          <button className="icon-btn" aria-label="Zoom out" title="Zoom out" onClick={()=>S.current.zoomBy(1/1.6)}>−</button>
+          <button className="icon-btn" aria-label="Reset view" title="Reset view" onClick={()=>{S.current.reset();props.onCountry(null)}}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2.3M8 12.2v2.3M1.5 8h2.3M12.2 8h2.3"/></svg>
+          </button>
+        </div>
+      )}
     </>
   );
 }

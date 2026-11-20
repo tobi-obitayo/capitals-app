@@ -1,5 +1,6 @@
 import {useSyncExternalStore} from "react";
-import {CONT,DATA,type ContinentName} from "./data";
+import {type Scope} from "./data";
+import {countriesIn,getSettings,subscribeSettings} from "./sets";
 
 /** Per-country level: 0 new, 1 learning, 2-3 mastered. Saved in localStorage. */
 const KEY="capitals.progress.v1";
@@ -11,6 +12,8 @@ const listeners=new Set<()=>void>();
 const emit=()=>{version++;listeners.forEach(l=>l())};
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(prog))}catch{/* ignore */}};
 
+export const subscribeProgress=(cb:()=>void)=>{listeners.add(cb);return()=>{listeners.delete(cb)}};
+
 export const lvl=(k:string)=>prog[k]||0;
 export const isMastered=(k:string)=>lvl(k)>=2;
 
@@ -20,20 +23,24 @@ export function record(k:string,ok:boolean){
 }
 export function resetProgress(){prog={};save();emit()}
 
-export function stats(cn:ContinentName){
-  const a=CONT[cn];
+export function stats(cn:Scope){
+  const a=countriesIn(cn);
   const mastered=a.filter(d=>isMastered(d.k)).length;
   const learning=a.filter(d=>lvl(d.k)===1).length;
   const frac=a.reduce((s,d)=>s+lvl(d.k)/3,0)/a.length;
   return{total:a.length,mastered,learning,frac};
 }
 export function overall(){
-  const mastered=DATA.filter(d=>isMastered(d.k)).length;
-  const learning=DATA.filter(d=>lvl(d.k)===1).length;
-  return{total:DATA.length,mastered,learning};
+  const a=countriesIn("World");
+  const mastered=a.filter(d=>isMastered(d.k)).length;
+  const learning=a.filter(d=>lvl(d.k)===1).length;
+  return{total:a.length,mastered,learning};
 }
 
-/** re-render when progress changes */
+/** re-render when progress or the country settings change (both change the numbers) */
+const SET_CODE={un:0,obs:1,all:2} as const;
+const snapshot=()=>{const st=getSettings();return version*8+SET_CODE[st.set]*2+(st.cross?1:0)};
+const subscribe=(cb:()=>void)=>{listeners.add(cb);const off=subscribeSettings(cb);return()=>{listeners.delete(cb);off()}};
 export function useProgress():number{
-  return useSyncExternalStore(cb=>{listeners.add(cb);return()=>listeners.delete(cb)},()=>version);
+  return useSyncExternalStore(subscribe,snapshot);
 }

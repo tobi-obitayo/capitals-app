@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from "react";
 import {loadWorld50,peekWorld50,type World} from "../geo";
 import {drawMini,hitMini,sceneFor} from "../map/mini";
 import type {Scene} from "../map/scene";
-import type {ContinentName} from "../data";
+import type {Scope} from "../data";
 
 export function useWorld50():World|null{
   const [w,setW]=useState<World|null>(peekWorld50());
@@ -15,7 +15,7 @@ export function useWorld50():World|null{
 }
 
 interface Props{
-  cn:ContinentName;
+  cn:Scope;
   fill:(name:string)=>string;
   hl:string|null;
   /** country lifted out of the map (hovered in a list) */

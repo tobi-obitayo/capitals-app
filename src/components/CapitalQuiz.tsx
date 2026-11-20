@@ -1,5 +1,5 @@
 import {useEffect,useReducer,useRef,useState} from "react";
-import type {ContinentName,Country} from "../data";
+import type {Country,Scope} from "../data";
 import {record} from "../progress";
 import {useQuizClock,type ItemResult,type QuizCfg,type QuizClock,type QuizResult} from "../quiz";
 import {AUTO_ADVANCE_MS,autoMatches,checkAnswer,shuffle} from "../util";
@@ -7,7 +7,7 @@ import {ModalShell} from "./ModalShell";
 import {ClockPill} from "./ui";
 
 interface Props{
-  cn:ContinentName;
+  cn:Scope;
   cfg:QuizCfg;
   items:Country[];
   onFinish:(r:QuizResult)=>void;

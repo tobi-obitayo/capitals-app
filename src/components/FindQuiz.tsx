@@ -1,5 +1,5 @@
 import {useEffect,useLayoutEffect,useMemo,useReducer,useRef,useState} from "react";
-import type {ContinentName,Country} from "../data";
+import type {Country,Scope} from "../data";
 import type {World} from "../geo";
 import {buildScene,drawFind,hitTest,insetAt,zoomView,type Scene,type View} from "../map/find";
 import {useQuizClock,type QuizCfg,type QuizClock,type QuizResult,type Status} from "../quiz";
@@ -8,7 +8,7 @@ import {useWorld50} from "./DrillMap";
 import {ClockPill} from "./ui";
 
 interface Props{
-  cn:ContinentName;
+  cn:Scope;
   cfg:QuizCfg;
   items:Country[];
   onFinish:(r:QuizResult)=>void;
@@ -104,8 +104,10 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
     const {W,H}=size.current;
     if(worldRef.current&&W>0){
       // phones: keep islands boxes out from under the floating "reset view" button
-      const reserved=W<=700?[{x:W-RESET_BTN-16,y:topInset.current,w:RESET_BTN+16,h:RESET_BTN+16}]:undefined;
-      scene.current=buildScene(worldRef.current,cn,W,H,{top:topInset.current,reserved});
+      // desktop world map: the zoom buttons (bottom left) stay clear of the boxes
+      const reserved=W<=700?[{x:W-RESET_BTN-16,y:topInset.current,w:RESET_BTN+16,h:RESET_BTN+16}]
+        :cn==="World"?[{x:0,y:H-176,w:76,h:176}]:undefined;
+      scene.current=buildScene(worldRef.current,cn,W,H,{top:topInset.current,reserved,cover:true});
     }
     dirty.current=true;
   };

@@ -3,6 +3,7 @@ import {MARK} from "../src/data";
 import type {World} from "../src/geo";
 import {hitTest,panelProjection,type Scene,type View} from "../src/map/find";
 import {lonLatBoxOverlaps,markersFor} from "../src/map/scene";
+import {shapeInScope} from "../src/sets";
 
 function eachPoly(geom:any):[number,number][][][]{
   if(!geom)return[];
@@ -13,7 +14,7 @@ function eachPoly(geom:any):[number,number][][][]{
 
 /** a screen point that really lands on `name` (inset first when the country lives in one) */
 export function clickPointFor(world:World,scene:Scene,view:View,name:string):{p:[number,number];panel:string}{
-  const shapes=world.shapes.filter(s=>s.n===name&&s.cn===scene.cn);
+  const shapes=world.shapes.filter(s=>s.n===name&&shapeInScope(s,scene.cn));
   const mark=markersFor(world,scene.cn).find(m=>m.n===name)||(MARK[name]?{n:name,ll:MARK[name] as [number,number]}:null);
   const lls:[number,number][]=[];
   for(const s of shapes){

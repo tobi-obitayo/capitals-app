@@ -1,11 +1,11 @@
-import type {ContinentName} from "../data";
+import type {Scope} from "../data";
 import type {World} from "../geo";
 import {buildScene,drawScene,hitScene,type Rect,type Scene} from "./scene";
 
 export {OK_FILL,BAD_FILL,NAVY,GOLD,lvlFill} from "./palette";
 
 export interface MiniOpts{
-  cn:ContinentName;
+  cn:Scope;
   /** fill for a country in this continent, by data name */
   fill:(name:string)=>string;
   /** country to highlight (navy), or null */

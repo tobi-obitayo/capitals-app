@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,useCallback} from "react";
-import {CONT_NAMES,type ContinentName} from "./data";
+import {CONT_NAMES,type ContinentName,type Scope} from "./data";
 
 export type QuizKind="find"|"capital";
 
@@ -21,7 +21,7 @@ export const QUIZ_CONTINENTS:ContinentName[]=[...CONT_NAMES];
 export type Status="ok"|"bad";
 export interface ItemResult{k:string;status:Status|"unseen";attempts:number;typed?:string}
 export interface QuizResult{
-  cn:ContinentName;
+  cn:Scope;
   cfg:QuizCfg;
   items:ItemResult[];
   reason:"done"|"time"|"giveup";

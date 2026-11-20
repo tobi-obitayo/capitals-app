@@ -1,22 +1,37 @@
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from "react";
-import {CONT,CONT_NAMES,type ContinentName,type Country} from "./data";
+import {CONT_NAMES,WORLD,type ContinentName,type Country,type Scope} from "./data";
+import {countriesIn} from "./sets";
+import {worldUnlocked} from "./unlock";
 import type {QuizCfg,QuizResult} from "./quiz";
 import {loadPrefs,savePrefs,type Prefs} from "./prefs";
 import {loadWorld50} from "./geo";
 import {WorldMap,type View} from "./components/WorldMap";
 import {Dock} from "./components/Dock";
 import {Panel} from "./components/Panel";
+import {CountryCard} from "./components/CountryCard";
 import {DrillModal} from "./components/DrillModal";
 import {FindQuiz} from "./components/FindQuiz";
 import {CapitalQuiz} from "./components/CapitalQuiz";
 import {QuizResults} from "./components/QuizResults";
 import {InfoIcon,Seg} from "./components/ui";
+import {Toaster} from "./components/ui/sonner";
 
 type Overlay=
   |null
-  |{t:"drill";cn:ContinentName}
-  |{t:"find"|"capital";cn:ContinentName;cfg:QuizCfg;items:Country[];run:number}
-  |{t:"results";cn:ContinentName;result:QuizResult};
+  |{t:"drill";cn:Scope}
+  |{t:"find"|"capital";cn:Scope;cfg:QuizCfg;items:Country[];run:number}
+  |{t:"results";cn:Scope;result:QuizResult};
+
+/** phones held sideways: the screen is short, so the buttons fade away and the map gets all of it */
+function useMedia(q:string){
+  const [m,setM]=useState(()=>matchMedia(q).matches);
+  useEffect(()=>{
+    const mq=matchMedia(q),sync=()=>setM(mq.matches);
+    sync();mq.addEventListener("change",sync);
+    return()=>mq.removeEventListener("change",sync);
+  },[q]);
+  return m;
+}
 
 export default function App(){
   const [view,setView]=useState<View>("globe");
@@ -28,6 +43,9 @@ export default function App(){
   const [highlight,setHighlight]=useState<ContinentName|null>(null);
   const [overlay,setOverlay]=useState<Overlay>(null);
   const [touched,setTouched]=useState(false);
+  const [country,setCountry]=useState<string|null>(null);
+  const [idle,setIdle]=useState(false);
+  const landscapePhone=useMedia("(orientation: landscape) and (max-height: 520px)");
   const [prefs,setPrefsState]=useState<Prefs>(loadPrefs);
   const dockRef=useRef<HTMLDivElement>(null);
   const runCounter=useRef(0);
@@ -48,21 +66,37 @@ export default function App(){
   const inset=dockOpen?dockH+16+34:0;
 
   const closeAll=()=>{setPanelOpen(false);setDockOpen(false)};
-  const openDrill=useCallback((cn:ContinentName)=>{
-    closeAll();setHighlight(null);setTouched(true);
+  const openDrill=useCallback((cn:Scope)=>{
+    if(cn===WORLD&&!worldUnlocked())return;   // World opens at 80% mastered or via the hidden circle
+    closeAll();setHighlight(null);setTouched(true);setCountry(null);
     setOverlay({t:"drill",cn});
   },[]);
 
-  const startQuiz=useCallback((cn:ContinentName,cfg:QuizCfg,items?:Country[])=>{
+  const startQuiz=useCallback((cn:Scope,cfg:QuizCfg,items?:Country[])=>{
+    if(cn===WORLD&&!worldUnlocked())return;
     setPrefs({...prefs,tab:"quiz",cfg});
-    setOverlay({t:cfg.kind==="find"?"find":"capital",cn,cfg,items:items??CONT[cn],run:++runCounter.current});
+    setOverlay({t:cfg.kind==="find"?"find":"capital",cn,cfg,items:items??countriesIn(cn),run:++runCounter.current});
   },[prefs,setPrefs]);
+
+  useEffect(()=>{if(view!=="flat"||panelOpen)setCountry(null)},[view,panelOpen]);
+
+  /* landscape phone on the flat map: buttons fade after a moment, any touch brings them back */
+  const immersive=landscapePhone&&view==="flat"&&!overlay&&!panelOpen&&!dockOpen&&!country;
+  useEffect(()=>{
+    if(!immersive){setIdle(false);return}
+    let t=window.setTimeout(()=>setIdle(true),2500);
+    const wake=()=>{setIdle(false);window.clearTimeout(t);t=window.setTimeout(()=>setIdle(true),2500)};
+    window.addEventListener("pointerdown",wake);window.addEventListener("pointermove",wake);
+    return()=>{window.clearTimeout(t);window.removeEventListener("pointerdown",wake);window.removeEventListener("pointermove",wake)};
+  },[immersive]);
+  useEffect(()=>{document.body.classList.toggle("chrome-idle",idle)},[idle]);
 
   /* outside click closes the (i) panel */
   useEffect(()=>{
     if(!panelOpen)return;
     const onDown=(e:PointerEvent)=>{
-      if(!(e.target as HTMLElement).closest("#panel,#info-btn"))setPanelOpen(false);
+      // popovers inside the panel render in a portal, so they count as inside too
+      if(!(e.target as HTMLElement).closest("#panel,#info-btn,[data-slot=popover-content]"))setPanelOpen(false);
     };
     document.addEventListener("pointerdown",onDown);
     return()=>document.removeEventListener("pointerdown",onDown);
@@ -72,6 +106,8 @@ export default function App(){
   useEffect(()=>{
     const onKey=(e:KeyboardEvent)=>{
       if(e.metaKey||e.ctrlKey||e.altKey)return;
+      if(e.defaultPrevented)return;   // an info popover already used this Esc to close itself
+      if(document.querySelector("[data-slot=popover-content][data-state=open]"))return;
       const tag=(e.target as HTMLElement).tagName;
       const inField=tag==="INPUT"||tag==="SELECT"||tag==="TEXTAREA";
       if(e.key==="Escape"){
@@ -88,6 +124,7 @@ export default function App(){
       else if(k==="i")setPanelOpen(o=>!o);
       else if(k==="c")setDockOpen(o=>!o);
       else if(/^[1-6]$/.test(e.key))openDrill(CONT_NAMES[+e.key-1]);
+      else if(e.key==="7")openDrill(WORLD);
     };
     window.addEventListener("keydown",onKey);
     return()=>window.removeEventListener("keydown",onKey);
@@ -98,8 +135,10 @@ export default function App(){
   return(
     <>
       <WorldMap view={view} inset={inset} autoSpin={autoSpin} resetKey={resetKey} paused={paused}
-        highlight={highlight} onPick={openDrill} onTouch={()=>setTouched(true)}/>
+        highlight={highlight} onPick={openDrill} onCountry={setCountry} onTouch={()=>setTouched(true)}/>
+      {country&&!paused&&<CountryCard name={country} onOpen={cn=>openDrill(cn)} onClose={()=>setCountry(null)}/>}
 
+      <Toaster position="top-center"/>
       <div className="float tl">
         <button id="info-btn" className="icon-btn" aria-label="About and progress" aria-expanded={panelOpen} aria-controls="panel"
           onClick={()=>setPanelOpen(o=>!o)}><InfoIcon size={18}/></button>

@@ -1,4 +1,4 @@
-import {geoPath,geoGraticule10,geoContains,type GeoProjection} from "d3";
+import {geoPath,geoGraticule10,geoContains,geoDistance,type GeoProjection} from "d3";
 import {CONT_NAMES,type ContinentName} from "../data";
 import type {World} from "../geo";
 
@@ -12,6 +12,27 @@ export interface LandingDraw{
   hover:ContinentName|null;
   /** 0..1 share of a continent you have learned, drives the navy tint */
   frac:(cn:ContinentName)=>number;
+  /** globe only: draw the small hidden circle on Elephant Island (World is still locked) */
+  elephant?:boolean;
+}
+
+/** Elephant Island, off the Antarctic Peninsula: the secret way to unlock World (lon, lat) */
+export const ELEPHANT_ISLAND:[number,number]=[-55.2,-61.1];
+/** past this angle from the globe's centre the island is too close to the edge to see or tap */
+const ELEPHANT_MAX_ANGLE=1.3;
+
+/** screen position of the island on the globe, or null when it is turned away from you */
+export function elephantSpot(proj:GeoProjection):[number,number]|null{
+  const c=proj.invert?.(proj.translate());
+  if(!c||!isFinite(c[0])||!isFinite(c[1]))return null;
+  if(geoDistance(ELEPHANT_ISLAND,c as [number,number])>ELEPHANT_MAX_ANGLE)return null;
+  const p=proj(ELEPHANT_ISLAND);
+  return p&&isFinite(p[0])&&isFinite(p[1])?[p[0],p[1]]:null;
+}
+/** is screen point (x, y) on the island's circle? `tol` is the tap radius in pixels */
+export function elephantHit(proj:GeoProjection,x:number,y:number,tol:number):boolean{
+  const p=elephantSpot(proj);
+  return !!p&&Math.hypot(p[0]-x,p[1]-y)<=tol;
 }
 
 export function drawLanding(ctx:CanvasRenderingContext2D,world:World,o:LandingDraw){
@@ -33,6 +54,14 @@ export function drawLanding(ctx:CanvasRenderingContext2D,world:World,o:LandingDr
   ctx.beginPath();path(world.innerMesh!);ctx.strokeStyle="#CBD3DD";ctx.lineWidth=.6;ctx.stroke();
   ctx.beginPath();path(world.contMesh!);ctx.strokeStyle="#1E293B";ctx.lineWidth=1;ctx.lineJoin="round";ctx.stroke();
   if(o.view==="globe"){ctx.beginPath();path({type:"Sphere"});ctx.strokeStyle="#1E293B";ctx.lineWidth=1.2;ctx.stroke()}
+  if(o.view==="globe"&&o.elephant){
+    const p=elephantSpot(proj);
+    if(p){
+      ctx.beginPath();ctx.arc(p[0],p[1],4.5,0,Math.PI*2);
+      ctx.strokeStyle="rgba(0,48,87,.65)";ctx.lineWidth=1.3;ctx.stroke();
+      ctx.beginPath();ctx.arc(p[0],p[1],1.2,0,Math.PI*2);ctx.fillStyle="rgba(0,48,87,.65)";ctx.fill();
+    }
+  }
 }
 
 /** which continent is under screen point (x, y), or null */

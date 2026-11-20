@@ -1,5 +1,5 @@
-import {geoAzimuthalEqualArea,geoConicEqualArea,type GeoProjection} from "d3";
-import {DATA,MARK,MINI,type ContinentName} from "../data";
+import {geoAzimuthalEqualArea,geoConicEqualArea,geoNaturalEarth1,type GeoProjection} from "d3";
+import {ALL,MARK,MINI,type Scope} from "../data";
 import type {World} from "../geo";
 
 type LL=[number,number];
@@ -8,7 +8,8 @@ type LL=[number,number];
  * One undistorted (equal-area) projection per continent, so countries keep their real shapes.
  * Azimuthal ones are centred on the continent; conic ones suit the wide east-west continents.
  */
-const PROJECTIONS:Record<ContinentName,()=>GeoProjection>={
+const PROJECTIONS:Record<Scope,()=>GeoProjection>={
+  World:()=>geoNaturalEarth1(),
   "North America":()=>geoAzimuthalEqualArea().rotate([100,-50]).clipAngle(105),
   "South America":()=>geoAzimuthalEqualArea().rotate([60,20]).clipAngle(105),
   Africa:()=>geoAzimuthalEqualArea().rotate([-20,-5]).clipAngle(105),
@@ -16,10 +17,10 @@ const PROJECTIONS:Record<ContinentName,()=>GeoProjection>={
   Asia:()=>geoConicEqualArea().parallels([12,52]).rotate([-88,0]),
   Oceania:()=>geoAzimuthalEqualArea().rotate([-160,25]).clipAngle(105),
 };
-export const makeProjection=(cn:ContinentName)=>PROJECTIONS[cn]();
+export const makeProjection=(cn:Scope)=>PROJECTIONS[cn]();
 
 /** is lon/lat inside the continent's framing box? (the box may wrap the date line, e.g. Oceania) */
-export function boxTest(cn:ContinentName){
+export function boxTest(cn:Scope){
   const c=MINI[cn];
   const lats=c.map(p=>p[1]);
   // corners are given as [W,N],[E,N],[E,S],[W,S]; west/east are the first two longitudes
@@ -33,9 +34,9 @@ function eachVertex(coords:any,fn:(p:LL)=>void){
   else for(const c of coords)eachVertex(c,fn);
 }
 
-const ptsCache=new WeakMap<World,Map<ContinentName,LL[]>>();
-/** every land vertex of the continent that lies inside its framing box, plus dots for micro-states */
-export function framePoints(world:World,cn:ContinentName):LL[]{
+const ptsCache=new WeakMap<World,Map<string,LL[]>>();
+/** every land vertex of the continent (or world) that lies inside its framing box, plus dots for micro-states */
+export function framePoints(world:World,cn:Scope):LL[]{
   let byCn=ptsCache.get(world);
   if(!byCn){byCn=new Map();ptsCache.set(world,byCn)}
   let pts=byCn.get(cn);
@@ -43,11 +44,12 @@ export function framePoints(world:World,cn:ContinentName):LL[]{
   const inBox=boxTest(cn);
   const out:LL[]=[];
   for(const s of world.shapes){
-    if(s.cn!==cn)continue;
+    // framing uses each shape's home continent only, so the frame doesn't move with the settings
+    if(cn==="World"?s.cn==="Antarctica":s.cn!==cn)continue;
     eachVertex((s.feat.geometry as any).coordinates,p=>{if(inBox(p[0],p[1]))out.push(p)});
   }
   const have=new Set(world.shapes.map(s=>s.n));
-  for(const d of DATA)if(d.cn===cn&&!have.has(d.k)&&MARK[d.k]&&inBox(MARK[d.k][0],MARK[d.k][1]))out.push(MARK[d.k]);
+  for(const d of ALL)if((cn==="World"||d.cn===cn)&&!have.has(d.k)&&MARK[d.k]&&inBox(MARK[d.k][0],MARK[d.k][1]))out.push(MARK[d.k]);
   byCn.set(cn,out);
   return out;
 }
@@ -56,7 +58,7 @@ export function framePoints(world:World,cn:ContinentName):LL[]{
  * The continent's projection, scaled to fit its land in [x0,y0]–[x1,y1] and centred there.
  * (Anything outside the framing box, such as eastern Russia on the Europe map, runs off the edge.)
  */
-export function frameProjection(world:World,cn:ContinentName,x0:number,y0:number,x1:number,y1:number):GeoProjection{
+export function frameProjection(world:World,cn:Scope,x0:number,y0:number,x1:number,y1:number):GeoProjection{
   const P=makeProjection(cn);
   const s0=P.scale(),t0=P.translate();
   let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
