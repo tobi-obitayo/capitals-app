@@ -16,7 +16,7 @@ Map-first trainer for world capitals — drill by continent, quiz on the map, un
 
 <br />
 
-<img src="docs/readme/demo.gif" alt="Capitals app demo: globe landing, continent drill, find quiz, name capital, and results" width="360" />
+<img src="docs/readme/demo.gif" alt="Capitals desktop demo: globe landing, continent drill, find quiz, name capital, and results" width="720" />
 
 </div>
 
