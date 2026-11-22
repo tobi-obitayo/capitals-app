@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "shots": "node scripts/shots.mjs",
-    "dev:phone": "node scripts/dev-phone.mjs"
+    "dev:phone": "node scripts/dev-phone.mjs",
+    "perf": "node scripts/perf.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.5",

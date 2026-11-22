@@ -103,6 +103,20 @@ export const vq={
     const t=Math.acos(Math.max(-1,Math.min(1,a[0]*b[0]+a[1]*b[1]+a[2]*b[2])))/2,s=Math.sin(t)/l;
     return[Math.cos(t),w[2]*s,-w[1]*s,w[0]*s];
   },
+  conj(a:Q):Q{return[a[0],-a[1],-a[2],-a[3]]},
+  /** the turn that takes rotation `a` to rotation `b` (b = a * turn), as a unit axis and an angle in radians */
+  between(a:Q,b:Q):{axis:V3;angle:number}{
+    const d=vq.mul(vq.conj(a),b);
+    const s=d[0]<0?-1:1;   // shortest way round
+    const l=Math.hypot(d[1],d[2],d[3]);
+    if(l<1e-12)return{axis:[0,0,1],angle:0};
+    return{axis:[s*d[1]/l,s*d[2]/l,s*d[3]/l],angle:2*Math.atan2(l,s*d[0])};   // atan2 stays exact for tiny angles
+  },
+  /** rotation by `angle` radians about a unit axis */
+  turn(axis:V3,angle:number):Q{
+    const s=Math.sin(angle/2);
+    return[Math.cos(angle/2),axis[0]*s,axis[1]*s,axis[2]*s];
+  },
   mul(a:Q,b:Q):Q{
     return[
       a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],

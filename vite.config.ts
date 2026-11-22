@@ -7,5 +7,5 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins:[react(),tailwindcss()],
   resolve:{alias:{"@":fileURLToPath(new URL("./src",import.meta.url))}},
-  test:{include:["tests/**/*.test.{ts,tsx}"],testTimeout:30000},
+  test:{include:["tests/**/*.test.{ts,tsx}"],testTimeout:30000,setupFiles:["tests/setup.ts"]},
 });

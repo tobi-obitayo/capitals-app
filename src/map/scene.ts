@@ -3,9 +3,11 @@ import {MARK,type Scope} from "../data";
 import {countriesIn,getSettings,shapeInScope} from "../sets";
 import type {Shape,World} from "../geo";
 import {framePoints,frameProjection} from "./frame";
-import {
-  GOLD,INSET_BORDER,LAND_STROKE,NAVY,NEIGHBOUR,NEIGHBOUR_STROKE,OCEAN,TERRITORY,
-} from "./palette";
+import {recorder,type Box} from "./flatcache";
+import {DEFAULT_LOOK,GOLD,INSET_BORDER,NAVY,OCEANIA_LOOK,type Look} from "./palette";
+
+/** the colours a scope is painted with */
+export const lookOf=(cn:Scope):Look=>cn==="Oceania"?OCEANIA_LOOK:DEFAULT_LOOK;
 
 /* ------------------------------------------------------------------ */
 /* Scene: the main map plus boxed, magnified insets for tiny islands.  */
@@ -35,6 +37,8 @@ interface InsetDef{
   box:[number,number,number,number];corners:Corner[];
   /** multiply the usual inset size (crowded island chains need more room) */
   boost?:number;
+  /** same, on short or narrow panes (phones), where the map is smallest and islands hardest to hit */
+  shortBoost?:number;
 }
 
 /** boxed magnifications: where the islands/micro-states are too small to see or click */
@@ -57,9 +61,10 @@ export const INSETS:Partial<Record<Scope,InsetDef[]>>={
     {id:"singapore",label:"Singapore",box:[103.5,1.1,104.2,1.55],corners:["br","tr","bl","tl"]},
   ],
   Oceania:[
-    {id:"micronesia",label:"Micronesia",box:[130,-2,175,12],corners:["tl","tr","bl","br"]},
+    // most Oceania countries are specks, so on phones both boxes are drawn much larger than usual
+    {id:"micronesia",label:"Micronesia",box:[130,-2,175,12],corners:["tl","tr","bl","br"],shortBoost:1.5},
     // wraps the date line so Tuvalu (179°), Samoa, Tonga, Niue and the Cook Islands sit in one box
-    {id:"polynesia",label:"Polynesia",box:[168,-23,-157,-5],corners:["br","bl","tr","tl"]},
+    {id:"polynesia",label:"Polynesia",box:[168,-23,-157,-5],corners:["br","bl","tr","tl"],shortBoost:1.5},
   ],
   // the world pane is mostly ocean, so only the crowded chains get a box; the rest are reached by zooming
   World:[
@@ -71,6 +76,7 @@ export const INSETS:Partial<Record<Scope,InsetDef[]>>={
 
 const MARGIN=14;
 const DOT_AREA=30;   // px²: smaller than this in an inset, a country is drawn as a dot
+const MAIN_DOT_AREA=60;   // the same on the main map, where a scope's look asks for it (Oceania)
 const LABEL_H=20;
 
 /**
@@ -143,7 +149,7 @@ export function buildScene(world:World,cn:Scope,W:number,H:number,o:SceneOpts={}
     const maxW0=Math.max(short?110:150,Math.min(280,W*(short?0.42:0.26)));
     const maxH0=Math.max(short?110:140,Math.min(320,H*(short?0.32:0.4)));
     for(const d of defs){
-      const boost=d.boost??1;
+      const boost=(short?d.shortBoost:undefined)??d.boost??1;
       const maxW=Math.min(W-MARGIN*2,maxW0*boost);
       const maxH=Math.min(H-MARGIN*2-Math.max(top,0),maxH0*boost);
       const [w0,s0,e0,n0]=d.box;
@@ -214,7 +220,9 @@ export const lonLatBoxOverlaps=boundsOverlapBox;
 function boundsOverlapBox(b:Shape["bounds"],box:[number,number,number,number]){
   const [[w,s],[e,n]]=b,[bw,bs,be,bn]=box;
   if(n<bs||s>bn)return false;
-  return w<=e?!(e<bw||w>be):(w<=be||e>=bw);
+  // either longitude range (either may wrap the date line) contains the other's west edge
+  const within=(lon:number,from:number,to:number)=>from<=to?lon>=from&&lon<=to:lon>=from||lon<=to;
+  return within(w,bw,be)||within(bw,w,e);
 }
 const lonLatIn=(b:Shape["bounds"],lon:number,lat:number)=>{
   const [[w,s],[e,n]]=b;
@@ -244,70 +252,146 @@ function roundRect(c:CanvasRenderingContext2D,x:number,y:number,w:number,h:numbe
   c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();
 }
 
-function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:World,P:GeoProjection,o:DrawOpts){
-  const path=geoPath(P,c);
-  const inset=!!panel.rect;
-  const sw=inset?1.1:.8;
-  const shape=(s:Shape,fill:string,stroke:string,lw:number)=>{
-    c.beginPath();path(s.feat);c.fillStyle=fill;c.fill();
-    c.strokeStyle=stroke;c.lineWidth=lw;c.lineJoin="round";c.stroke();
-  };
+/* ---------------- cached, projected outlines (one per panel) ---------------- */
+
+/**
+ * Projecting a continent's outlines through d3 is by far the most expensive part of a frame, so each panel is
+ * projected once, at its unzoomed layout, into Path2Ds. Pan and zoom then only move the canvas transform:
+ *   screen = k * base + (tx, ty)
+ * (the main panel's projection is exactly that scale + translate of its base, see panelProjection).
+ */
+export interface PanelShape{shape:Shape;path:Path2D;box:Box|null;/** unzoomed px² */area:number;/** unzoomed px */ctr:[number,number]|null}
+export interface PanelGeo{
+  neighbours:Path2D;
+  territories:Path2D;
+  /** the named countries of this scope that show in this panel */
+  countries:PanelShape[];
+  byName:Map<string,PanelShape[]>;
+}
+
+const UNZOOMED:View={k:1,tx:0,ty:0};
+/** resampling precision of the cached outlines: finer than the default so they hold up at MAX_ZOOM */
+const PANEL_PRECISION=.12;
+const CACHE_MAX=24;
+const geoCache=new WeakMap<World,Map<string,PanelGeo>>();
+
+function buildPanelGeo(world:World,cn:Scope,panel:Panel):PanelGeo{
+  const P=panelProjection(panel,UNZOOMED);
+  const old=P.precision();
+  P.precision(PANEL_PRECISION);
+  const gp=geoPath(P);
   const visible=(s:Shape)=>!panel.box||boundsOverlapBox(s.bounds,panel.box);
+  const group=(keep:(s:Shape)=>boolean)=>{
+    const r=recorder();gp.context(r.ctx);
+    for(const s of world.shapes)if(keep(s)&&visible(s))gp(s.feat);
+    return r.path;
+  };
+  const neighbours=group(s=>!shapeInScope(s,cn)&&!(cn==="World"&&s.cn==="Antarctica"));
+  const territories=group(s=>shapeInScope(s,cn)&&!s.n);
+  const countries:PanelShape[]=[],byName=new Map<string,PanelShape[]>();
+  for(const s of world.shapes){
+    if(!shapeInScope(s,cn)||!s.n||!visible(s))continue;
+    const r=recorder();gp.context(r.ctx);gp(s.feat);
+    gp.context(null);
+    const ctr=gp.centroid(s.feat) as [number,number];
+    const e:PanelShape={shape:s,path:r.path,box:r.box(),area:gp.area(s.feat),ctr:isFinite(ctr[0])&&isFinite(ctr[1])?ctr:null};
+    countries.push(e);
+    const l=byName.get(s.n);
+    if(l)l.push(e);else byName.set(s.n,[e]);
+  }
+  P.precision(old);
+  return{neighbours,territories,countries,byName};
+}
+
+/** the cached outlines of a panel; rebuilt only when its projection or the shapes in scope change (not on every answer) */
+export function panelGeo(world:World,cn:Scope,panel:Panel):PanelGeo{
+  let m=geoCache.get(world);
+  if(!m){m=new Map();geoCache.set(world,m)}
+  const st=getSettings();
+  const key=[cn,st.set,st.cross?1:0,panel.id,panel.s0.toFixed(3),panel.t0[0].toFixed(2),panel.t0[1].toFixed(2)].join("|");
+  let g=m.get(key);
+  if(!g){
+    g=buildPanelGeo(world,cn,panel);
+    m.set(key,g);
+    if(m.size>CACHE_MAX)m.delete(m.keys().next().value!);
+  }
+  return g;
+}
+
+function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:World,view:View,o:DrawOpts){
+  const inset=!!panel.rect;
+  const geo=panelGeo(world,scene.cn,panel);          // (before panelProjection below: building it moves the projection)
+  const P=panelProjection(panel,view);               // only for the handful of marker dots
+  const v=inset?UNZOOMED:view,k=v.k;
+  const look=lookOf(scene.cn);
+  const sw=inset?1.1:look.landW;
+  const onScreen=(b:Box|null)=>!b||inset||!(b.x1*k+v.tx<-8||b.x0*k+v.tx>scene.W+8||b.y1*k+v.ty<-8||b.y0*k+v.ty>scene.H+8);
+
+  c.save();
+  c.translate(v.tx,v.ty);c.scale(k,k);
+  c.lineJoin="round";
+  const paint=(path:Path2D,fill:string,stroke:string,lw:number)=>{
+    c.fillStyle=fill;c.fill(path);
+    c.strokeStyle=stroke;c.lineWidth=lw/k;c.stroke(path);
+  };
 
   // quiet neighbours first, then this continent on top
-  for(const s of world.shapes)if(!shapeInScope(s,scene.cn)&&!(scene.cn==="World"&&s.cn==="Antarctica")&&visible(s))shape(s,NEIGHBOUR,NEIGHBOUR_STROKE,.6);
-  for(const s of world.shapes)if(shapeInScope(s,scene.cn)&&!s.n&&visible(s))shape(s,TERRITORY,NEIGHBOUR_STROKE,.6);
-  for(const s of world.shapes){
-    if(!shapeInScope(s,scene.cn)||!s.n||!visible(s))continue;
-    const hl=o.hl===s.n;
-    shape(s,hl?NAVY:o.fill(s.n),hl?NAVY:LAND_STROKE,hl?1.4:sw);
-    const ov=!hl&&o.overlay?.(s.n);
-    if(ov){c.fillStyle=ov;c.beginPath();path(s.feat);c.fill()}
+  paint(geo.neighbours,look.neighbour,look.neighbourStroke,.6);
+  paint(geo.territories,look.territory,look.neighbourStroke,.6);
+  for(const e of geo.countries){
+    if(!onScreen(e.box))continue;
+    const n=e.shape.n!,hl=o.hl===n;
+    paint(e.path,hl?NAVY:o.fill(n),hl?NAVY:look.landStroke,hl?1.4:sw);
+    const ov=!hl&&o.overlay?.(n);
+    if(ov){c.fillStyle=ov;c.fill(e.path)}
   }
+  c.restore();
 
-  // in an inset, a country still too small to see (Vatican, Monaco…) is drawn as a dot you can click
-  if(inset){
-    for(const s of world.shapes){
-      if(!shapeInScope(s,scene.cn)||!s.n||!visible(s)||path.area(s.feat)>=DOT_AREA)continue;
-      const ctr=path.centroid(s.feat) as [number,number];
-      if(!isFinite(ctr[0])||!inRect(panel.rect!,ctr[0],ctr[1]))continue;
-      const hl=o.hl===s.n;
-      const r=dotR(hl);
-      c.beginPath();c.arc(ctr[0],ctr[1],r,0,7);
-      c.fillStyle=hl?NAVY:o.fill(s.n);c.fill();
-      c.strokeStyle=hl?NAVY:"#64748B";c.lineWidth=1.1;c.stroke();
-      const ov=!hl&&o.overlay?.(s.n);
-      if(ov){c.beginPath();c.arc(ctr[0],ctr[1],r,0,7);c.fillStyle=ov;c.fill()}
-    }
-  }
-
+  /** an unzoomed point to its place on screen */
+  const toScreen=(p:[number,number]):[number,number]=>[p[0]*k+v.tx,p[1]*k+v.ty];
   const onPanel=(p:[number,number]|null)=>!!p&&isFinite(p[0])&&isFinite(p[1])&&(panel.rect
     ?inRect(panel.rect,p[0],p[1])
     :p[0]>-10&&p[0]<scene.W+10&&p[1]>-10&&p[1]<scene.H+10);
+  /** a clickable dot for a country too small to see; bold looks add a white halo and a dark rim so it stands out on the sea */
+  const dot=(x:number,y:number,name:string,lw:number)=>{
+    const hl=o.hl===name,r=dotR(hl);
+    if(look.bold){c.beginPath();c.arc(x,y,r+2.2,0,7);c.fillStyle="rgba(255,255,255,.88)";c.fill()}
+    c.beginPath();c.arc(x,y,r,0,7);
+    c.fillStyle=hl?NAVY:o.fill(name);c.fill();
+    c.strokeStyle=hl?NAVY:look.bold?"#334155":"#64748B";c.lineWidth=look.bold?Math.max(lw,1.5):lw;c.stroke();
+    const ov=!hl&&o.overlay?.(name);
+    if(ov){c.beginPath();c.arc(x,y,r,0,7);c.fillStyle=ov;c.fill()}
+  };
+
+  // a country still too small to see (Vatican, Monaco…) is drawn as a dot you can click: in an inset, and on
+  // the main map too for looks that ask for it (Oceania: a speck there is easy to miss)
+  const dotBelow=inset?DOT_AREA:look.bold?MAIN_DOT_AREA:0;
+  if(dotBelow){
+    for(const e of geo.countries){
+      if(e.area*k*k>=dotBelow||!e.ctr)continue;
+      const ctr=toScreen(e.ctr);
+      if(!onPanel(ctr))continue;
+      dot(ctr[0],ctr[1],e.shape.n!,1.1);
+    }
+  }
+
   let ring:[number,number]|null=null;
   for(const mk of markersFor(world,scene.cn)){
     const p=P(mk.ll) as [number,number]|null;
     if(!onPanel(p))continue;
-    const hl=o.hl===mk.n;
-    const r=dotR(hl);
-    c.beginPath();c.arc(p![0],p![1],r,0,7);
-    c.fillStyle=hl?NAVY:o.fill(mk.n);c.fill();
-    c.strokeStyle=hl?NAVY:"#64748B";c.lineWidth=1;c.stroke();
-    const ov=!hl&&o.overlay?.(mk.n);
-    if(ov){c.beginPath();c.arc(p![0],p![1],r,0,7);c.fillStyle=ov;c.fill()}
-    if(hl&&!inset)ring=p;
+    dot(p![0],p![1],mk.n,1);
+    if(o.hl===mk.n&&!inset)ring=p;
   }
 
   // a highlighted country too small to see on the main map still gets a ring (insets cover most)
   if(o.hl&&!inset){
-    const hs=world.shapes.filter(s=>s.n===o.hl&&shapeInScope(s,scene.cn));
+    const hs=geo.byName.get(o.hl)??[];
     if(hs.length){
-      const area=hs.reduce((a,s)=>a+path.area(s.feat),0);
+      const area=hs.reduce((a,e)=>a+e.area,0)*k*k;
       if(area<40){
-        const big=hs.reduce((a,b)=>path.area(a.feat)>=path.area(b.feat)?a:b);
-        const ctr=path.centroid(big.feat) as [number,number];
-        const inInset=scene.panels.some(p=>p.box&&big.bounds&&boundsOverlapBox(big.bounds,p.box));
-        if(isFinite(ctr[0])&&!inInset)ring=ctr;
+        const big=hs.reduce((a,b)=>a.area>=b.area?a:b);
+        const inInset=scene.panels.some(p=>p.box&&big.shape.bounds&&boundsOverlapBox(big.shape.bounds,p.box));
+        if(big.ctr&&!inInset)ring=toScreen(big.ctr);
       }
     }
   }
@@ -317,20 +401,22 @@ function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:Wor
 
   // lift the hovered country out of the map
   if(o.emph){
-    const es=world.shapes.filter(s=>s.n===o.emph&&shapeInScope(s,scene.cn)&&visible(s));
+    const es=geo.byName.get(o.emph)??[];
+    c.save();
+    c.translate(v.tx,v.ty);c.scale(k,k);c.lineJoin="round";
     c.save();
     c.shadowColor="rgba(0,48,87,.45)";c.shadowBlur=14;c.shadowOffsetY=3;
-    for(const s of es)shape(s,o.hl===s.n?NAVY:o.fill(o.emph),NAVY,2.2);
+    for(const e of es)paint(e.path,o.hl===e.shape.n?NAVY:o.fill(o.emph),NAVY,2.2);
     c.restore();
-    for(const s of es){
+    for(const e of es){
       const ov=o.overlay?.(o.emph);
-      if(ov){c.fillStyle=ov;c.beginPath();path(s.feat);c.fill()}
-      c.beginPath();path(s.feat);c.strokeStyle=NAVY;c.lineWidth=2;c.stroke();
+      if(ov){c.fillStyle=ov;c.fill(e.path)}
+      c.strokeStyle=NAVY;c.lineWidth=2/k;c.stroke(e.path);
     }
-    if(inset)for(const s of es){
-      if(path.area(s.feat)>=DOT_AREA)continue;
-      const ctr=path.centroid(s.feat) as [number,number];
-      if(isFinite(ctr[0])){c.beginPath();c.arc(ctr[0],ctr[1],8,0,7);c.strokeStyle=NAVY;c.lineWidth=2.4;c.stroke()}
+    c.restore();
+    if(inset)for(const e of es){
+      if(e.area>=DOT_AREA||!e.ctr)continue;
+      c.beginPath();c.arc(e.ctr[0],e.ctr[1],8,0,7);c.strokeStyle=NAVY;c.lineWidth=2.4;c.stroke();
     }
     for(const mk of markersFor(world,scene.cn)){
       if(mk.n!==o.emph)continue;
@@ -345,23 +431,23 @@ function paintPanel(c:CanvasRenderingContext2D,scene:Scene,panel:Panel,world:Wor
 export function drawScene(c:CanvasRenderingContext2D,scene:Scene,world:World,o:DrawOpts){
   const view=o.view??{k:1,tx:0,ty:0};
   c.clearRect(0,0,scene.W,scene.H);
-  c.fillStyle=OCEAN;c.fillRect(0,0,scene.W,scene.H);
+  const look=lookOf(scene.cn);
+  c.fillStyle=look.ocean;c.fillRect(0,0,scene.W,scene.H);
   for(const panel of scene.panels){
-    const P=panelProjection(panel,view);
     c.save();
     if(panel.rect){
       const r=panel.rect;
       roundRect(c,r.x,r.y,r.w,r.h,8);
       c.shadowColor="rgba(15,23,42,.08)";c.shadowBlur=8;c.shadowOffsetY=2;
-      c.fillStyle=OCEAN;c.fill();
+      c.fillStyle=look.ocean;c.fill();
       c.shadowColor="transparent";
       c.clip();
     }
-    paintPanel(c,scene,panel,world,P,o);
+    paintPanel(c,scene,panel,world,view,o);
     if(panel.rect){
       // title strip, so the label never sits on top of land
       const r=panel.rect;
-      c.fillStyle=OCEAN;c.fillRect(r.x,r.y,r.w,LABEL_H);
+      c.fillStyle=look.ocean;c.fillRect(r.x,r.y,r.w,LABEL_H);
       c.beginPath();c.moveTo(r.x,r.y+LABEL_H);c.lineTo(r.x+r.w,r.y+LABEL_H);
       c.strokeStyle="rgba(100,116,139,.22)";c.lineWidth=1;c.stroke();
     }
@@ -385,6 +471,8 @@ export function drawScene(c:CanvasRenderingContext2D,scene:Scene,world:World,o:D
 const coarsePointer=()=>typeof matchMedia==="function"&&matchMedia("(pointer: coarse)").matches;
 const markerHit=()=>coarsePointer()?20:10;
 const nearHit=()=>coarsePointer()?20:10;
+/** Oceania's islands are mostly specks, so a tap may land a little further off */
+const hitBoost=(scene:Scene)=>lookOf(scene.cn).bold?1.35:1;
 const dotR=(hl:boolean)=>coarsePointer()?(hl?9:7.5):(hl?6:4.5);
 
 function hitPanel(world:World,scene:Scene,panel:Panel,P:GeoProjection,x:number,y:number):string|null{
@@ -396,7 +484,7 @@ function hitPanel(world:World,scene:Scene,panel:Panel,P:GeoProjection,x:number,y
     }
   }
   // micro-states drawn as dots
-  let best:string|null=null,bd=markerHit();
+  let best:string|null=null,bd=markerHit()*hitBoost(scene);
   for(const mk of markersFor(world,scene.cn)){
     const p=P(mk.ll) as [number,number]|null;
     if(!p)continue;
@@ -406,7 +494,7 @@ function hitPanel(world:World,scene:Scene,panel:Panel,P:GeoProjection,x:number,y
   if(best)return best;
   // a few pixels off a very small island still counts
   const path=geoPath(P);
-  bd=nearHit();
+  bd=nearHit()*hitBoost(scene);
   for(const s of world.shapes){
     if(!shapeInScope(s,scene.cn)||!s.n)continue;
     if(panel.box&&!boundsOverlapBox(s.bounds,panel.box))continue;

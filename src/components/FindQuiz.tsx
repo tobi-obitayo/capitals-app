@@ -1,7 +1,8 @@
 import {useEffect,useLayoutEffect,useMemo,useReducer,useRef,useState} from "react";
 import type {Country,Scope} from "../data";
 import type {World} from "../geo";
-import {buildScene,drawFind,hitTest,insetAt,zoomView,type Scene,type View} from "../map/find";
+import {buildScene,drawFind,hitTest,insetAt,MAX_ZOOM,zoomView,type Scene,type View} from "../map/find";
+import {Gestures,type Camera} from "../map/gesture";
 import {useQuizClock,type QuizCfg,type QuizClock,type QuizResult,type Status} from "../quiz";
 import {shuffle,TAP_SLOP} from "../util";
 import {useWorld50} from "./DrillMap";
@@ -116,7 +117,17 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
     dirty.current=true;
     syncZoomed();
   };
-  const resetView=()=>{view.current={k:1,tx:0,ty:0};dirty.current=true;syncZoomed()};
+  const cam:Camera={
+    zoom:()=>view.current.k,
+    range:()=>[1,MAX_ZOOM],
+    zoomAt:(x,y,z)=>zoomAt(x,y,z),
+    panBy:(dx,dy)=>{view.current={...view.current,tx:view.current.tx+dx,ty:view.current.ty+dy};dirty.current=true;syncZoomed()},
+  };
+  /* input is recorded by the handlers and applied once per frame (eased wheel zoom, direct pinch, pan momentum) */
+  const gest=useRef<Gestures>(null!);
+  if(!gest.current)gest.current=new Gestures(cam);
+  const zoomBy=(f:number)=>gest.current.zoomBy(f,size.current.W/2,size.current.H/2);
+  const resetView=()=>{gest.current.stop();view.current={k:1,tx:0,ty:0};dirty.current=true;syncZoomed()};
 
   useLayoutEffect(()=>{
     const hud=hudRef.current;
@@ -157,71 +168,73 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
       return sc?hitTest(wd,sc,view.current,x,y):null;
     };
 
+    const g=gest.current;
+    const reduced=typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
     const pointers=new Map<number,{x:number;y:number}>();
-    let drag:{x:number;y:number;tx:number;ty:number;moved:boolean;onInset:boolean}|null=null;
-    let pinch:{dist:number;k:number}|null=null;
+    let drag:{x:number;y:number;moved:boolean;onInset:boolean}|null=null;
+    let pinchOk=false;   // a pinch that starts on an inset box does nothing: insets are already magnified
     const pos=(e:PointerEvent|WheelEvent):[number,number]=>{const r=canvas.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};
-    const midDist=()=>{
+    const two=()=>{
       const pts=[...pointers.values()];
-      if(pts.length<2)return null;
-      return{
-        mid:[(pts[0].x+pts[1].x)/2,(pts[0].y+pts[1].y)/2] as [number,number],
-        dist:Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y),
-      };
+      return pts.length>=2?[pts[0],pts[1]] as const:null;
+    };
+    const startPinch=()=>{
+      const t=two();if(!t)return;
+      drag=null;canvas.classList.remove("panning");
+      const mx=(t[0].x+t[1].x)/2,my=(t[0].y+t[1].y)/2;
+      pinchOk=!(scene.current&&insetAt(scene.current,mx,my));
+      if(pinchOk)g.pinchBegin(t[0].x,t[0].y,t[1].x,t[1].y);
     };
     const down=(e:PointerEvent)=>{
       const [x,y]=pos(e);
       pointers.set(e.pointerId,{x,y});
       canvas.setPointerCapture(e.pointerId);
-      if(pointers.size>=2){
-        drag=null;canvas.classList.remove("panning");
-        const m=midDist();
-        if(m&&m.dist>0)pinch={dist:m.dist,k:view.current.k};
-      }else{
-        pinch=null;
-        drag={x,y,tx:view.current.tx,ty:view.current.ty,moved:false,onInset:!!(scene.current&&insetAt(scene.current,x,y))};
-      }
+      g.stop();
+      if(pointers.size>=2){startPinch();return}
+      const onInset=!!(scene.current&&insetAt(scene.current,x,y));
+      drag={x,y,moved:false,onInset};
+      if(!onInset)g.dragBegin(x,y);
     };
     const move=(e:PointerEvent)=>{
       if(!pointers.has(e.pointerId))return;
       const [x,y]=pos(e);
       pointers.set(e.pointerId,{x,y});
       if(pointers.size>=2){
-        const m=midDist();
-        if(m&&pinch&&pinch.dist>0){
-          if(scene.current&&insetAt(scene.current,m.mid[0],m.mid[1]))return;
-          zoomAt(m.mid[0],m.mid[1],pinch.k*(m.dist/pinch.dist));
-        }
+        const t=two();
+        if(t&&pinchOk&&g.pinching())g.pinchTo(t[0].x,t[0].y,t[1].x,t[1].y);
         return;
       }
       if(!drag)return;
-      if(!drag.onInset&&Math.hypot(x-drag.x,y-drag.y)>TAP_SLOP){drag.moved=true;canvas.classList.add("panning")}
-      if(drag.moved){view.current={...view.current,tx:drag.tx+x-drag.x,ty:drag.ty+y-drag.y};dirty.current=true;syncZoomed()}
+      if(!drag.onInset&&!drag.moved&&Math.hypot(x-drag.x,y-drag.y)>TAP_SLOP){drag.moved=true;canvas.classList.add("panning");g.dragGo()}
+      if(drag.moved)g.dragTo(x,y,performance.now());
     };
     const up=(e:PointerEvent)=>{
       const wasClick=drag&&!drag.moved&&pointers.size<=1;
       pointers.delete(e.pointerId);
-      if(pointers.size<2)pinch=null;
+      if(pointers.size<2){g.pinchEnd();pinchOk=false}
       if(pointers.size===1){
-        const [id,p]=[...pointers.entries()][0];
-        drag={x:p.x,y:p.y,tx:view.current.tx,ty:view.current.ty,moved:false,onInset:!!(scene.current&&insetAt(scene.current,p.x,p.y))};
-        void id;
+        // one finger left after a pinch: it carries on as a pan, and lifting it later is not a tap
+        const p=[...pointers.values()][0];
+        drag={x:p.x,y:p.y,moved:true,onInset:false};
+        g.dragBegin(p.x,p.y);g.dragGo();canvas.classList.add("panning");
       }else{
-        const click=wasClick;drag=null;canvas.classList.remove("panning");
+        const click=wasClick;
+        g.dragEnd(performance.now(),!reduced);
+        drag=null;canvas.classList.remove("panning");
         const wd=peek.current;
         if(click&&wd){const [x,y]=pos(e);const n=hit(wd,x,y);if(n)guessRef.current(n)}
       }
     };
     const cancel=(e:PointerEvent)=>{
       pointers.delete(e.pointerId);
-      if(pointers.size<2)pinch=null;
-      if(pointers.size===0){drag=null;canvas.classList.remove("panning")}
+      if(pointers.size<2){g.pinchEnd();pinchOk=false}
+      if(pointers.size===0){g.dragEnd(performance.now(),false);drag=null;canvas.classList.remove("panning")}
     };
     const wheel=(e:WheelEvent)=>{
       e.preventDefault();
       const [x,y]=pos(e);
       if(scene.current&&insetAt(scene.current,x,y))return;   // insets are already magnified
-      zoomAt(x,y,view.current.k*Math.exp(-e.deltaY*.002));
+      g.wheel(e,x,y);
     };
     canvas.addEventListener("pointerdown",down);
     canvas.addEventListener("pointermove",move);
@@ -237,6 +250,7 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
       peek.current=worldRef.current;
       const f=flash.current;
       if(f){if(performance.now()-f.t0>FLASH_MS)flash.current=null;dirty.current=true}
+      g.tick(performance.now());
       if(dirty.current&&peek.current)draw(peek.current);
       raf=requestAnimationFrame(loop);
     };
@@ -258,8 +272,8 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
     const onKey=(e:KeyboardEvent)=>{
       if(e.metaKey||e.ctrlKey||e.altKey)return;
       if(e.key==="s"||e.key==="S")skip();
-      else if(e.key==="+"||e.key==="=")zoomAt(size.current.W/2,size.current.H/2,view.current.k*1.5);
-      else if(e.key==="-"||e.key==="_")zoomAt(size.current.W/2,size.current.H/2,view.current.k/1.5);
+      else if(e.key==="+"||e.key==="=")zoomBy(1.5);
+      else if(e.key==="-"||e.key==="_")zoomBy(1/1.5);
     };
     window.addEventListener("keydown",onKey);
     return()=>window.removeEventListener("keydown",onKey);
@@ -296,8 +310,8 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
       {!world&&<div className="qloading">Loading map…</div>}
 
       <div className="zoom-tools">
-        <button className="icon-btn" aria-label="Zoom in" onClick={()=>zoomAt(size.current.W/2,size.current.H/2,view.current.k*1.5)}>+</button>
-        <button className="icon-btn" aria-label="Zoom out" onClick={()=>zoomAt(size.current.W/2,size.current.H/2,view.current.k/1.5)}>−</button>
+        <button className="icon-btn" aria-label="Zoom in" onClick={()=>zoomBy(1.5)}>+</button>
+        <button className="icon-btn" aria-label="Zoom out" onClick={()=>zoomBy(1/1.5)}>−</button>
         <button className="icon-btn" aria-label="Reset zoom" title="Reset view" onClick={resetView}>⌖</button>
       </div>
       {zoomed&&(

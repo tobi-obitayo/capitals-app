@@ -3,6 +3,7 @@ import type {Geometry} from "geojson";
 import type {ContinentName} from "../data";
 import type {Shape,World} from "../geo";
 import {OCEAN} from "./palette";
+import type {Box,CachedMesh,FlatGeo} from "./flatcache";
 
 /**
  * The flat world map: full-bleed ocean, Antarctica cropped, pan (wraps around the date line) and zoom.
@@ -11,6 +12,8 @@ import {OCEAN} from "./palette";
  */
 
 const LAT_MIN=-58,LAT_MAX=84;
+/** scale of the reference projection the cached outlines are drawn in (see flatcache.ts) */
+export const FLAT_REF=2000;
 export const FLAT_ZOOM_MAX=14;
 /** from this zoom on, country names show and a tap picks a country instead of opening the continent */
 export const LABEL_ZOOM=2;
@@ -65,7 +68,8 @@ export function flatLayout(proj:GeoProjection,W:number,H:number,v:FlatView):Flat
   return{proj,W,H,s,ww,hh,view:{zoom,px,py},minZoom,abs:zoom*f};
 }
 
-export const makeFlatProjection=()=>geoNaturalEarth1();
+/** precision 1 (d3 default .707): fewer resampled points on the dense 50m outlines, still smooth at every zoom */
+export const makeFlatProjection=()=>geoNaturalEarth1().precision(1);
 
 /** zoom to `nz` keeping screen point (x, y) where it is */
 export function zoomFlatAt(lay:FlatLayout,x:number,y:number,nz:number):FlatView{
@@ -121,7 +125,7 @@ export function pickCountryFlat(world:World,lay:FlatLayout,x:number,y:number):st
 
 const anchors=new WeakMap<Shape,[number,number]>();
 /** a point inside the country's biggest piece, found once */
-function anchorOf(s:Shape):[number,number]{
+export function anchorOf(s:Shape):[number,number]{
   let a=anchors.get(s);
   if(a)return a;
   const g=s.feat.geometry as Geometry;
@@ -153,92 +157,158 @@ function boxPx(lay:FlatLayout,b:Shape["bounds"]){
 
 /* ---------------- drawing ---------------- */
 
+/**
+ * Names are picked (which fit, which collide) from time to time, not on every frame: in between, the chosen
+ * names just follow the map. That keeps them from popping in and out while you zoom, and keeps frames cheap.
+ */
+export const LABEL_REFRESH_MS=100;
+export interface LabelState{
+  geo:FlatGeo|null;size:number;t:number;view:FlatView;
+  /** the names chosen, with their anchor in reference px and their text width */
+  items:{n:string;ax:number;ay:number;tw:number}[];
+}
+export const newLabels=():LabelState=>({geo:null,size:0,t:-1e9,view:{...FLAT_HOME},items:[]});
+const sameView=(a:FlatView,b:FlatView)=>a.zoom===b.zoom&&a.px===b.px&&a.py===b.py;
+/** the map moved since the names were picked and it has been a moment: pick again */
+export const labelsStale=(L:LabelState,lay:FlatLayout,now:number)=>
+  L.geo!==null&&now-L.t>=LABEL_REFRESH_MS&&!sameView(L.view,lay.view);
+
 export interface FlatDraw{
   W:number;H:number;
   lay:FlatLayout;
-  /** the merged continents of the world to draw (with border meshes) */
-  world:World;
-  /** the 50m world, used for country shapes, fills and names (null until loaded) */
-  detail:World|null;
+  /** the cached continents and border meshes to draw */
+  geo:FlatGeo;
+  /** the cached 50m world, used for country shapes, fills and names (null until built) */
+  detail:FlatGeo|null;
   hover:ContinentName|null;
   hoverCountry:string|null;
   frac:(cn:ContinentName)=>number;
   /** a country's learning level 0..3, for tinting once zoomed in */
   level:(name:string)=>number;
   lvlFill:(level:number)=>string;
+  labels:LabelState;
+  /** performance.now() of this frame */
+  now:number;
 }
 
+const CULL_PAD=6;
+
+/**
+ * Draw the flat map from the cached outlines: every frame is a transform of already-projected paths
+ * (see flatcache.ts), with whatever is off screen skipped.
+ */
 export function drawFlat(ctx:CanvasRenderingContext2D,o:FlatDraw){
-  const {W,H,lay,world}=o;
+  const {W,H,lay,geo}=o;
   ctx.fillStyle=OCEAN;ctx.fillRect(0,0,W,H);
-  if(!world.continents)return;
-  const path=geoPath(lay.proj,ctx);
-  const countryMode=lay.view.zoom>=LABEL_ZOOM&&!!o.detail;
-  const left=lay.proj.translate()[0]+lay.s*UB.x0;   // left edge of the centre copy of the world
+  const det=o.detail;
+  const countryMode=lay.view.zoom>=LABEL_ZOOM&&!!det;
+  const [tx,ty]=lay.proj.translate();
+  const k=lay.s/FLAT_REF,hair=1/k;
+  const left=tx+lay.s*UB.x0,top=ty+lay.s*UB.y0;   // top-left corner of the centre copy of the world
 
   for(let i=-1;i<=1;i++){
     const dx=i*lay.ww;
     if(left+dx>W||left+dx+lay.ww<0)continue;
     ctx.save();ctx.translate(dx,0);
     // crop to the shown latitudes: no Antarctica, and no stray border lines below the map
-    ctx.beginPath();ctx.rect(left,lay.proj.translate()[1]+lay.s*UB.y0,lay.ww,lay.hh);ctx.clip();
-    for(const c of world.continents){
-      if(c.name==="Antarctica")continue;
-      ctx.beginPath();path(c.geo);ctx.fillStyle="#FFFFFF";ctx.fill();
+    ctx.beginPath();ctx.rect(left,top,lay.ww,lay.hh);ctx.clip();
+    ctx.translate(tx,ty);ctx.scale(k,k);
+    // what is on screen, in reference px
+    const x0=(-dx-tx)/k-CULL_PAD*hair,x1=(W-dx-tx)/k+CULL_PAD*hair,y0=-ty/k-CULL_PAD*hair,y1=(H-ty)/k+CULL_PAD*hair;
+    const seen=(b:Box|null)=>!b||(b.x1>=x0&&b.x0<=x1&&b.y1>=y0&&b.y0<=y1);
+
+    for(const c of geo.continents){
+      if(c.name==="Antarctica"||!seen(c.box))continue;
+      ctx.fillStyle="#FFFFFF";ctx.fill(c.path);
       if(countryMode)continue;
       const f=o.frac(c.name as ContinentName);
-      if(f>0){ctx.fillStyle=`rgba(0,48,87,${.1+.6*f})`;ctx.fill()}
-      if(o.hover===c.name){ctx.fillStyle="rgba(179,163,105,.42)";ctx.fill()}
+      if(f>0){ctx.fillStyle=`rgba(0,48,87,${.1+.6*f})`;ctx.fill(c.path)}
+      if(o.hover===c.name){ctx.fillStyle="rgba(179,163,105,.42)";ctx.fill(c.path)}
     }
     if(countryMode){
       // zoomed in: each country carries its own progress colour; greyed-out ones sit back
-      for(const s of o.detail!.shapes){
-        if(s.cn==="Antarctica")continue;
-        if(s.off){ctx.beginPath();path(s.feat);ctx.fillStyle="#E4E9EF";ctx.fill();continue}
+      for(const c of det!.shapes){
+        const s=c.shape;
+        if(s.cn==="Antarctica"||!seen(c.box))continue;
+        if(s.off){ctx.fillStyle="#E4E9EF";ctx.fill(c.path);continue}
         if(!s.n)continue;
         const lv=o.level(s.n),hv=o.hoverCountry===s.n;
-        if(lv>0||hv){
-          ctx.beginPath();path(s.feat);
-          if(lv>0){ctx.fillStyle=o.lvlFill(lv);ctx.fill()}
-          if(hv){ctx.fillStyle="rgba(179,163,105,.42)";ctx.fill()}
-        }
+        if(lv>0){ctx.fillStyle=o.lvlFill(lv);ctx.fill(c.path)}
+        if(hv){ctx.fillStyle="rgba(179,163,105,.42)";ctx.fill(c.path)}
       }
     }
-    ctx.beginPath();path(world.innerMesh!);ctx.strokeStyle="#CBD3DD";ctx.lineWidth=.6;ctx.stroke();
-    ctx.beginPath();path(world.contMesh!);ctx.strokeStyle="#1E293B";ctx.lineWidth=1;ctx.lineJoin="round";ctx.stroke();
+    const mesh=(m:CachedMesh,color:string,w:number)=>{
+      ctx.strokeStyle=color;ctx.lineWidth=w*hair;ctx.lineJoin="round";
+      const on=m.bins.filter(b=>seen(b.box));
+      // most of the mesh on screen: one stroke is cheaper; zoomed in: only the pieces that are visible
+      if(on.length>m.bins.length*.5)ctx.stroke(m.all);
+      else for(const b of on)ctx.stroke(b.path);
+    };
+    mesh(geo.innerMesh,"#CBD3DD",.6);
+    mesh(geo.contMesh,"#1E293B",1);
     ctx.restore();
   }
 
   if(countryMode)drawNames(ctx,o);
+  else o.labels.geo=null;
 }
 
-function drawNames(ctx:CanvasRenderingContext2D,o:FlatDraw){
+const widths=new Map<string,number>();
+/** measureText is slow in a loop over every country, and a name's width only changes with the font size */
+function textWidth(ctx:CanvasRenderingContext2D,size:number,name:string){
+  const k=size+"|"+name;
+  let w=widths.get(k);
+  if(w===undefined){w=ctx.measureText(name).width;widths.set(k,w)}
+  return w;
+}
+
+/** which names to show now: the ones that fit inside their country and don't collide, biggest countries first */
+function pickNames(ctx:CanvasRenderingContext2D,o:FlatDraw,size:number,tx:number,ty:number,k:number){
   const {lay,W,H}=o;
-  const size=lay.view.zoom<4?11:lay.view.zoom<8?12:13;
-  ctx.font=`600 ${size}px Inter,system-ui,sans-serif`;
-  ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";
-  const cand:{n:string;x:number;y:number;area:number;tw:number}[]=[];
-  for(const s of o.detail!.shapes){
-    if(!s.n||s.cn==="Antarctica")continue;
-    const a=anchorOf(s),p=lay.proj(a);
-    if(!p)continue;
+  const pad=160;   // names a little off screen are picked too, so a small pan doesn't need a new pick
+  const cand:{n:string;x:number;y:number;ax:number;ay:number;area:number;tw:number}[]=[];
+  for(const c of o.detail!.shapes){
+    const s=c.shape;
+    if(!s.n||s.cn==="Antarctica"||!c.anchor)continue;
     const bx=boxPx(lay,s.bounds);
-    const tw=ctx.measureText(s.n).width;
     // the name has to fit inside the country's box (small ones wait until you zoom further)
-    if(tw>bx.w*.92||size*1.2>bx.h)continue;
-    const x=p[0]-Math.round((p[0]-W/2)/lay.ww)*lay.ww;
-    if(x<-40||x>W+40||p[1]<-20||p[1]>H+20)continue;
-    cand.push({n:s.n,x,y:p[1],area:bx.w*bx.h,tw});
+    if(size*1.2>bx.h||bx.w<12)continue;
+    const tw=textWidth(ctx,size,s.n);
+    if(tw>bx.w*.92)continue;
+    const px=k*c.anchor[0]+tx,py=k*c.anchor[1]+ty;
+    const x=px-Math.round((px-W/2)/lay.ww)*lay.ww;
+    if(x<-pad||x>W+pad||py<-pad||py>H+pad)continue;
+    cand.push({n:s.n,x,y:py,ax:c.anchor[0],ay:c.anchor[1],area:bx.w*bx.h,tw});
   }
   cand.sort((a,b)=>b.area-a.area);
   const placed:{x0:number;x1:number;y0:number;y1:number}[]=[];
   const named=new Set<string>();
+  const items:LabelState["items"]=[];
   for(const c of cand){
     if(named.has(c.n))continue;   // Somalia + Somaliland share a name
     const r={x0:c.x-c.tw/2-3,x1:c.x+c.tw/2+3,y0:c.y-size*.65,y1:c.y+size*.65};
     if(placed.some(q=>r.x0<q.x1&&r.x1>q.x0&&r.y0<q.y1&&r.y1>q.y0))continue;
     placed.push(r);named.add(c.n);
-    ctx.strokeStyle="rgba(255,255,255,.92)";ctx.lineWidth=3.2;ctx.strokeText(c.n,c.x,c.y);
-    ctx.fillStyle="#1E293B";ctx.fillText(c.n,c.x,c.y);
+    items.push({n:c.n,ax:c.ax,ay:c.ay,tw:c.tw});
+  }
+  return items;
+}
+
+function drawNames(ctx:CanvasRenderingContext2D,o:FlatDraw){
+  const {lay,W,H,labels:L}=o;
+  const size=lay.view.zoom<4?11:lay.view.zoom<8?12:13;
+  ctx.font=`600 ${size}px Inter,system-ui,sans-serif`;
+  ctx.textAlign="center";ctx.textBaseline="middle";ctx.lineJoin="round";
+  const [tx,ty]=lay.proj.translate(),k=lay.s/FLAT_REF;
+  if(L.geo!==o.detail||L.size!==size||(!sameView(L.view,lay.view)&&o.now-L.t>=LABEL_REFRESH_MS)){
+    L.items=pickNames(ctx,o,size,tx,ty,k);
+    L.geo=o.detail;L.size=size;L.t=o.now;L.view={...lay.view};
+  }
+  for(const c of L.items){
+    const px=k*c.ax+tx,py=k*c.ay+ty;
+    const x=px-Math.round((px-W/2)/lay.ww)*lay.ww;
+    if(x<-40||x>W+40||py<-20||py>H+20)continue;
+    ctx.strokeStyle="rgba(255,255,255,.92)";ctx.lineWidth=3.2;ctx.strokeText(c.n,x,py);
+    ctx.fillStyle="#1E293B";ctx.fillText(c.n,x,py);
   }
 }
