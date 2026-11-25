@@ -57,7 +57,7 @@ async function toFindQuiz(page,kind){
     await pause(600);
     await page.getByRole("button",{name:"Quiz",exact:true}).click();
     await page.getByRole("button",{name:"Find the country",exact:true}).click();
-    await page.locator(".drawer-overlay").click({position:{x:195,y:20}});
+    await page.mouse.click(195,20);
     await pause(500);
     await page.locator(".setup-cta .btn").click();
   }else{
@@ -82,7 +82,7 @@ async function measure(page,name,kind,gesture){
   await pause(500);
   const {f,lt}=await page.evaluate(()=>({f:window.__f.slice(),lt:window.__lt}));
   // drop the idle frames at the end (after the gesture finished)
-  const s=[...f].sort((a,b)=>a-b);
+  const s=f.toSorted((a,b)=>a-b);
   const q=p=>s[Math.min(s.length-1,Math.floor(s.length*p))];
   const r={name,kind,frames:f.length,p50:q(.5),p95:q(.95),max:s.at(-1),over50:f.filter(x=>x>50).length,longTaskMs:Math.round(lt)};
   const t=TARGET[kind];

@@ -66,9 +66,17 @@ body.touched .hint{opacity:0}
 .panel{position:fixed;top:calc(60px + env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left));z-index:15;width:340px;max-width:calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right));max-height:calc(100dvh - 80px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 36px rgba(15,23,42,.12);padding:18px;animation:pop .15s ease}
 .panel[hidden]{display:none}
 @keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-.p-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px}
-.p-head h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em}
-.p-head p{margin:2px 0 0;font-size:13px;color:var(--muted)}
+.p-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}
+.panel-x{width:36px;height:36px;border-radius:10px;font-size:13px}
+.p-hero{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px}
+.p-hero .p-big{margin:0}
+.p-learning{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}
+.p-learning i{width:8px;height:8px;border-radius:50%;background:var(--gold);opacity:.7}
+.keys2{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;font-size:13px;color:var(--muted)}
+.keys2 div{display:grid;grid-template-columns:58px 1fr;align-items:center;gap:8px}
+.keys2 .k{display:inline-flex;align-items:center;gap:2px}
+.link.reset-link{color:var(--bad);margin-top:18px}
+.link.reset-link:hover{color:#991B1B}
 .p-sec{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
 .p-big{font-size:26px;font-weight:700;color:var(--navy);margin:2px 0 8px;letter-spacing:-.01em}
 .p-big span{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:0}
@@ -97,10 +105,15 @@ kbd{font:inherit;font-size:11px;font-weight:600;color:var(--ink);background:var(
 .tip .row{display:flex;justify-content:space-between;gap:16px}
 
 /* ---------- drill modal (large) ---------- */
-.overlay{position:fixed;inset:0;background:rgba(15,23,42,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:3vh 3vw;z-index:50;animation:fadein .18s ease}
-.overlay[hidden]{display:none}
+dialog.modal::backdrop{background:rgba(15,23,42,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fadein .18s ease;overflow:hidden;overscroll-behavior:contain}
 @keyframes fadein{from{opacity:0}to{opacity:1}}
-.modal{width:min(1240px,100%);height:min(800px,100% - var(--kb,0px));max-height:calc(100dvh - var(--kb,0px));display:flex;flex-direction:column;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.35);animation:rise .22s cubic-bezier(.2,.8,.2,1)}
+dialog.modal{
+  padding:0;border:0;margin:auto;color:inherit;max-width:none;max-height:none;outline:none;
+  width:min(1240px,100% - 6vw);height:min(800px,100% - 6vh - var(--kb,0px));
+  flex-direction:column;background:#fff;border-radius:20px;overflow:hidden;overscroll-behavior:contain;
+  box-shadow:0 30px 80px rgba(15,23,42,.35);animation:rise .22s cubic-bezier(.2,.8,.2,1);
+}
+dialog.modal[open]{display:flex}
 @keyframes rise{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
 .m-head{flex:none;position:relative;z-index:2;display:flex;align-items:center;gap:12px;padding:18px 24px;padding-top:max(18px,env(safe-area-inset-top));border-bottom:1px solid var(--line);flex-wrap:wrap}
 .m-head>div{flex:1 1 220px;min-width:0}
@@ -130,8 +143,8 @@ kbd{font:inherit;font-size:11px;font-weight:600;color:var(--ink);background:var(
   .right{order:-1;border-bottom:1px solid var(--line)}
   .left{padding:22px 20px;padding-bottom:calc(22px + env(safe-area-inset-bottom))}
   /* phones: the window is the whole visible screen (no blurred backdrop), sized to what's above the keyboard */
-  .overlay{padding:0;display:block;background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none;animation:none}
-  .modal{position:fixed;left:0;right:0;top:var(--vvt,0px);width:100%;height:var(--vvh,100dvh);max-height:none;border-radius:0;box-shadow:none;animation:none}
+  dialog.modal::backdrop{background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none;animation:none}
+  dialog.modal{inset:var(--vvt,0px) 0 auto 0;margin:0;width:100%;height:var(--vvh,100dvh);border-radius:0;box-shadow:none;animation:none}
   .m-head{padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));gap:10px}
   .m-head h2{font-size:17px}
   .run-top{gap:10px;margin-bottom:20px;flex-wrap:wrap}
@@ -164,16 +177,36 @@ kbd{font:inherit;font-size:11px;font-weight:600;color:var(--ink);background:var(
   .quiz-foot.sticky-foot{padding-top:8px}
 }
 
-/* ---------- Vaul settings drawer ---------- */
-.drawer-overlay{position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.45)}
-.drawer-content{
-  position:fixed;left:0;right:0;bottom:0;z-index:61;display:flex;flex-direction:column;
-  max-height:min(88dvh,720px);outline:none;background:#fff;border-radius:18px 18px 0 0;
-  box-shadow:0 -12px 40px rgba(15,23,42,.18);
+/* ---------- bottom drawer (native <dialog>, see Drawer.tsx) ---------- */
+dialog.drawer{
+  inset:auto 0 0 0;margin:0;padding:0;border:0;width:100%;max-width:none;max-height:min(88dvh,720px);
+  color:inherit;outline:none;flex-direction:column;background:#fff;border-radius:18px 18px 0 0;
+  box-shadow:0 -12px 40px rgba(15,23,42,.18);overflow:hidden;overscroll-behavior:contain;
+  opacity:0;
+  transition-property:opacity,translate,display,overlay;transition-duration:.32s;
+  transition-timing-function:cubic-bezier(.32,.72,0,1);
+  transition-behavior:allow-discrete;
 }
-/* !important: Vaul injects its own unlayered handle style, which would otherwise beat this layered sheet */
-.drawer-handle{width:40px!important;height:5px!important;border-radius:999px!important;background:#CBD5E1!important;margin:10px auto 0!important;flex:none}
-.drawer-head{padding:12px 20px 8px;flex:none}
+dialog.drawer[open]{display:flex}
+dialog.drawer[open]:not([data-closing]){opacity:1}
+@starting-style{dialog.drawer[open]:not([data-closing]){opacity:0}}
+@media(prefers-reduced-motion:no-preference){
+  dialog.drawer{translate:0 100%;opacity:1}
+  dialog.drawer[open]:not([data-closing]){translate:0 0}
+  @starting-style{dialog.drawer[open]:not([data-closing]){translate:0 100%;opacity:1}}
+}
+@media(prefers-reduced-motion:reduce){dialog.drawer{transition-duration:.1s}}
+dialog.drawer::backdrop{
+  background:rgba(15,23,42,0);overflow:hidden;overscroll-behavior:contain;
+  transition-property:background-color,display,overlay;transition-duration:.32s;
+  transition-behavior:allow-discrete;
+}
+dialog.drawer[open]:not([data-closing])::backdrop{background:rgba(15,23,42,.45)}
+@starting-style{dialog.drawer[open]:not([data-closing])::backdrop{background:rgba(15,23,42,0)}}
+.drawer-grip{flex:none;touch-action:pan-x;cursor:grab}
+.drawer-handle{display:block;width:64px;height:22px;margin:0 auto;padding:0;border:0;background:none;touch-action:none;cursor:grab}
+.drawer-handle::before{content:"";display:block;width:40px;height:5px;margin:10px auto 0;border-radius:999px;background:#CBD5E1}
+.drawer-head{padding:4px 20px 8px;flex:none}
 .drawer-title{margin:0;font-size:17px;font-weight:700;color:var(--navy);letter-spacing:-.01em}
 .drawer-body{
   padding:8px 20px calc(20px + env(safe-area-inset-bottom));overflow-x:hidden;overflow-y:auto;

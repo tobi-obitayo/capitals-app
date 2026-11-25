@@ -31,14 +31,17 @@ export function checkAnswer(accepted:string[],typed:string,spell:boolean):Answer
 }
 
 /**
- * Auto-check (spell check off): is what's typed already exactly an accepted answer, with no longer
- * accepted answer it could still be turning into ("Washington" vs "Washington, D.C.")?
+ * Auto-check (spell check off): is what's typed already exactly an accepted answer?
+ * Waits when a longer accepted answer could still be forming ("Washington" → "Washington, D.C."),
+ * but the primary spelling (first entry) always accepts — so "Bern" is not blocked by alt "Berne".
  */
 export function autoMatches(accepted:string[],typed:string):boolean{
   const n=norm(typed);
   if(!n)return false;
   const answers=accepted.map(norm);
-  return answers.includes(n)&&!answers.some(a=>a.length>n.length&&a.startsWith(n));
+  if(!answers.includes(n))return false;
+  if(answers[0]===n)return true;
+  return !answers.some(a=>a.length>n.length&&a.startsWith(n));
 }
 
 /** how long the green "correct" state shows after an auto-check before moving on */

@@ -73,7 +73,7 @@ async function main(){
 
     await page.getByRole("button",{name:"Quiz",exact:true}).click();
     await page.getByRole("button",{name:"Find the country",exact:true}).click();
-    await page.locator(".drawer-overlay").click({position:{x:195,y:20}});   // close drawer (Escape would also close the drill)
+    await page.mouse.click(195,20);   // tap the backdrop above the drawer to close it
     await pause(500);
     await page.locator(".setup-cta .btn").click();
     await page.waitForSelector(".qhud");
@@ -105,7 +105,7 @@ async function main(){
     await pause(700);
     await page.getByRole("button",{name:"Quiz",exact:true}).click();
     await page.getByRole("button",{name:"Name the capital",exact:true}).click();
-    await page.locator(".drawer-overlay").click({position:{x:195,y:20}});
+    await page.mouse.click(195,20);
     await pause(500);
     await page.locator(".setup-cta .btn").click();
     await page.waitForSelector("input[type=text]");

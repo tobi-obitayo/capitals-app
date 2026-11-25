@@ -101,7 +101,7 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
   });
 
   return(
-    <ModalShell title={`${cn} · Name the capital`} dismissOnBackdrop={false} hideMap
+    <ModalShell title={`${cn} · Name the capital`} dismissible={false} hideMap
       sub={cfg.spell?"Spell check on":"Spell check off · checks as you type"} onClose={onExit}
       right={null}>
       <div className="run-top">
@@ -123,7 +123,7 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
             <input ref={inputRef} type="text" readOnly={!!fb&&!fb.ok} placeholder="Type the capital…"
               autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="next"
               inputMode="text" onChange={onTyping}
-              onKeyDown={e=>{if(fb&&e.key==="Enter"){e.preventDefault();next()}}}/>
+              onKeyDown={e=>{if(fb&&e.key==="Enter"){e.preventDefault();if(e.nativeEvent.isComposing||e.keyCode===229)return;next()}}}/>
             {fb&&(
               <div className={"fb "+(fb.ok?"ok":"bad")}>
                 {fb.ok
@@ -133,7 +133,7 @@ export function CapitalQuiz({cn,cfg,items,onFinish,onExit}:Props){
             )}
             {fb
               ?<button type="button" className="btn" onClick={next}>{i+1>=order.length?"Finish":"Next"}<span className="kbd-only"><kbd>↵</kbd></span></button>
-              :<button type="submit" className="btn">Check<span className="kbd-only"><kbd>↵</kbd></span></button>}
+              :cfg.spell&&<button type="submit" className="btn">Check<span className="kbd-only"><kbd>↵</kbd></span></button>}
           </form>
         </>
       )}

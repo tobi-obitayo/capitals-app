@@ -67,12 +67,14 @@ describe("World is locked until 80% mastered",()=>{
   it("the shortcut for 7 is only listed once World is open",()=>{
     const {unmount}=render(<App/>);
     fireEvent.click(screen.getByRole("button",{name:"About and progress"}));
-    expect(screen.queryByText("World (all countries)")).toBeNull();
+    fireEvent.click(screen.getByRole("button",{name:"Settings"}));
+    expect(document.querySelector(".keys2")!.textContent).not.toContain("World");
     unmount();
     unlockWorld();
     render(<App/>);
     fireEvent.click(screen.getByRole("button",{name:"About and progress"}));
-    expect(screen.getByText("World (all countries)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button",{name:"Settings"}));
+    expect(document.querySelector(".keys2")!.textContent).toContain("World");
   });
 });
 

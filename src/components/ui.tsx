@@ -8,6 +8,13 @@ export const InfoIcon=({size=16}:{size?:number})=>(
   </svg>
 );
 
+export const GearIcon=()=>(
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M12 1.5v2.2M12 20.3v2.2M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M1.5 12h2.2M20.3 12h2.2M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/>
+  </svg>
+);
+
 /** (i) icon whose explanation shows on hover or keyboard focus */
 export function Info({children,align="center",label="More info"}:{children:ReactNode;align?:"center"|"left"|"right";label?:string}){
   return(

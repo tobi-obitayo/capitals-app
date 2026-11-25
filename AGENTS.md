@@ -2,9 +2,9 @@
 
 When building UI, prioritize the following libraries for specific components:
 
-1. Use shadcn/ui for foundational primitives (buttons, inputs, dialogues).
+1. Use shadcn/ui for foundational primitives (buttons, inputs). Exception: modal dialogs use the native `<dialog>` via `useModalDialog` / `ModalShell` (`src/components/useModalDialog.ts`); do not add Radix Dialog/Sheet, since mixing portals with the top layer breaks stacking.
 2. Use Sonner for all toast notifications.
-3. Use Vaul for bottom drawers.
+3. Bottom drawers use the native `BottomDrawer` in `src/components/Drawer.tsx` (Vaul was removed: unmaintained).
 4. Use cmdk for command search interfaces.
 5. Use NumberFlow for animating number changes.
 

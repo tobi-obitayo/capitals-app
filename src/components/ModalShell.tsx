@@ -1,11 +1,12 @@
-import {useEffect,type ReactNode} from "react";
+import {useEffect,useId,type ReactNode} from "react";
+import {DialogLayer,closedByFor,useDialogElement,useModalDialog} from "./useModalDialog";
 
 interface Props{
   title:string;
   sub:ReactNode;
   onClose:()=>void;
-  /** clicking the dimmed backdrop closes (off for quizzes so a stray click can't end one) */
-  dismissOnBackdrop?:boolean;
+  /** Esc, back and backdrop taps close it (off for quizzes so a stray tap can't end one) */
+  dismissible?:boolean;
   /** narrow screens: keep the map as a short strip (~120px) while typing */
   compactMap?:boolean;
   /** typing quizzes: no map pane at all */
@@ -18,7 +19,11 @@ interface Props{
 }
 
 /** large modal: controls on the left, map on the right */
-export function ModalShell({title,sub,onClose,dismissOnBackdrop=true,compactMap=false,hideMap=false,setupMap=false,headExtra,right,children}:Props){
+export function ModalShell({title,sub,onClose,dismissible=true,compactMap=false,hideMap=false,setupMap=false,headExtra,right,children}:Props){
+  const {ref,el,setRef}=useDialogElement();
+  const titleId=useId();
+  useModalDialog(ref,{open:true,onClose,dismissible,lightDismiss:true});
+
   useEffect(()=>{
     const vv=window.visualViewport;
     if(!vv)return;
@@ -47,10 +52,12 @@ export function ModalShell({title,sub,onClose,dismissOnBackdrop=true,compactMap=
     +(setupMap&&!hideMap?" setup-map":"");
 
   return(
-    <div className="overlay" onPointerDown={e=>{if(dismissOnBackdrop&&e.target===e.currentTarget)onClose()}}>
-      <div className={"modal"+(hideMap?" no-map":"")+(compactMap&&!hideMap?" compact-map":"")+(setupMap?" setup-map":"")} role="dialog" aria-modal="true" aria-label={title}>
+    <dialog ref={setRef} tabIndex={-1} aria-labelledby={titleId}
+      className={"modal"+(hideMap?" no-map":"")+(compactMap&&!hideMap?" compact-map":"")+(setupMap?" setup-map":"")}
+      {...({closedby:closedByFor(dismissible,true)} as object)}>
+      <DialogLayer.Provider value={el}>
         <div className="m-head">
-          <div style={{flex:1}}><h2>{title}</h2><p>{sub}</p></div>
+          <div style={{flex:1}}><h2 id={titleId}>{title}</h2><p>{sub}</p></div>
           {headExtra}
           <button className="icon-btn" aria-label="Close" onClick={onClose}>✕</button>
         </div>
@@ -58,7 +65,7 @@ export function ModalShell({title,sub,onClose,dismissOnBackdrop=true,compactMap=
           {!(setupMap&&!hideMap)&&<div className="left">{children}</div>}
           {!hideMap&&right}
         </div>
-      </div>
-    </div>
+      </DialogLayer.Provider>
+    </dialog>
   );
 }

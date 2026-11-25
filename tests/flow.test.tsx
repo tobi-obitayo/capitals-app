@@ -30,6 +30,11 @@ afterEach(()=>{cleanup();vi.useRealTimers()});
 
 const V1={k:1,tx:0,ty:0};
 const click=(name:string|RegExp)=>fireEvent.click(screen.getByRole("button",{name}));
+/** what Esc does to the topmost open modal: a cancelable `cancel` event */
+const pressEscOnDialog=()=>{
+  const open=[...document.querySelectorAll("dialog[open]")];
+  open.at(-1)?.dispatchEvent(new Event("cancel",{cancelable:true}));
+};
 
 function openNorthAmericaQuiz(kind:"Find the country"|"Name the capital"){
   fireEvent.keyDown(window,{key:"4"});
@@ -116,6 +121,7 @@ describe("auto-check (spell check off)",()=>{
     openNorthAmericaQuiz("Name the capital");
     fireEvent.click(screen.getByRole("switch",{name:"Spell check"}));
     click(/Start quiz/);
+    expect(screen.queryByRole("button",{name:/Check/})).toBeNull(); // auto-check — no Check button
     const first=document.querySelector(".q h3")!.textContent!;
     typeIn(dataByName[first].c.slice(0,3));                // not there yet
     expect(document.querySelector(".fb")).toBeNull();
@@ -279,7 +285,7 @@ describe("quiz availability",()=>{
     for(const key of ["1","2","3","4","5","6"]){
       fireEvent.keyDown(window,{key});
       expect((screen.getByRole("button",{name:"Quiz"}) as HTMLButtonElement).disabled,`key ${key}`).toBe(false);
-      fireEvent.keyDown(window,{key:"Escape"});
+      act(pressEscOnDialog);
     }
   });
   it("hard mode and spell check toggles live in the quiz setup",()=>{
@@ -460,7 +466,7 @@ describe("mobile map-first setup",()=>{
     expect(screen.getByRole("button",{name:/Start (drill|quiz)/})).toBeTruthy();
     expect(screen.getByRole("button",{name:"Settings"})).toBeTruthy();
     // modals are solid on phones (the stylesheet drops the blurred backdrop at this width)
-    expect(document.querySelector(".overlay")).toBeTruthy();
+    expect(document.querySelector("dialog.modal[open]")).toBeTruthy();
     // Learn/Quiz controls are not sitting in the modal body
     expect(document.querySelector(".modal .left")).toBeNull();
     click("Settings");

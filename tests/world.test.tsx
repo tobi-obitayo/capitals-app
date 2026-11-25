@@ -27,6 +27,7 @@ afterEach(()=>{cleanup();vi.useRealTimers();updateSettings({set:"obs",cross:fals
 
 const click=(name:string|RegExp)=>fireEvent.click(screen.getByRole("button",{name}));
 const radio=(name:RegExp)=>fireEvent.click(screen.getByRole("radio",{name}));
+const openSettings=()=>{click("About and progress");click("Settings")};
 
 describe("World entry",()=>{
   beforeEach(()=>{unlockWorld()});
@@ -73,9 +74,11 @@ describe("country set in the (i) panel",()=>{
   it("193 / 195 / 202 change every count",()=>{
     const {unmount}=render(<App/>);
     click("About and progress");
-    expect(screen.getByText(/195 countries · 6 continents/)).toBeTruthy();
+    expect(screen.getByText(/\/ 195 mastered/)).toBeTruthy();
+    click("Settings");
     radio(/^UN members, 193/);
-    expect(screen.getByText(/193 countries · 6 continents/)).toBeTruthy();
+    click("Progress");
+    expect(screen.getByText(/\/ 193 mastered/)).toBeTruthy();
     unmount();
 
     render(<App/>);
@@ -89,18 +92,53 @@ describe("country set in the (i) panel",()=>{
 
   it("the choice is remembered",()=>{
     render(<App/>);
-    click("About and progress");
+    openSettings();
     radio(/^All states, 202/);
     expect(JSON.parse(localStorage.getItem("capitals.settings.v1")!)).toEqual({set:"all",cross:false});
   });
 
   it("the transcontinental switch adds the guests to the neighbouring continent",()=>{
     render(<App/>);
-    click("About and progress");
+    openSettings();
     fireEvent.click(screen.getByRole("switch",{name:/Transcontinental/}));
     fireEvent.keyDown(window,{key:"Escape"});
     fireEvent.keyDown(window,{key:"2"});   // Europe: 45 + Turkey, Georgia, Armenia, Azerbaijan
     click("Quiz");
     expect(screen.getByRole("button",{name:/Start quiz · 49 countries/})).toBeTruthy();
+  });
+});
+
+describe("progress and settings tabs",()=>{
+  it("opens on Progress; Settings is one tap away and back again",()=>{
+    render(<App/>);
+    click("About and progress");
+    expect(screen.getByText(/\/ 195 mastered/)).toBeTruthy();
+    expect(screen.queryByRole("radio",{name:/^UN members, 193/})).toBeNull();
+    click("Settings");
+    expect(screen.getByRole("radio",{name:/^UN members, 193/})).toBeTruthy();
+    click("Progress");
+    expect(screen.getByText(/\/ 195 mastered/)).toBeTruthy();
+  });
+});
+
+describe("reset progress confirmation",()=>{
+  it("requires typing RESET before wiping mastery",async()=>{
+    const {record,lvl,resetProgress}=await import("../src/progress");
+    resetProgress();
+    record("USA",true);record("USA",true);
+    expect(lvl("USA")).toBe(2);
+
+    render(<App/>);
+    openSettings();
+    click("Reset all progress");
+    const confirm=screen.getByRole("button",{name:"Reset progress"}) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    const input=screen.getByLabelText("Confirmation");
+    fireEvent.change(input,{target:{value:"reset"}});
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(input,{target:{value:"RESET"}});
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    expect(lvl("USA")).toBe(0);
   });
 });

@@ -9,7 +9,7 @@ import type{Prefs}from"../prefs";
 import{BottomDrawer}from"./Drawer";
 import{DrillMap}from"./DrillMap";
 import{ModalShell}from"./ModalShell";
-import{Field,Kbd,Seg,Switch}from"./ui";
+import{Field,GearIcon,Kbd,Seg,Switch}from"./ui";
 
 const MODE_NAMES=["Flashcards","Multiple choice","Type it"]as const;
 const MODE_SHORT=["Cards","Choice","Type"]as const;
@@ -37,13 +37,6 @@ function batchItems(cn:Scope,k:string):Country[]{
   const n=+k.slice(2);
   return a.slice(n*10,n*10+10);
 }
-
-const GearIcon=()=>(
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="3"/>
-    <path d="M12 1.5v2.2M12 20.3v2.2M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M1.5 12h2.2M20.3 12h2.2M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/>
-  </svg>
-);
 
 interface Props{
   cn:Scope;
@@ -276,7 +269,7 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
               <form className="stack" onSubmit={submitTyped}>
                 <input ref={inputRef} type="text" readOnly={!!fb&&!fb.ok} placeholder={c2k?"Type the capital…":"Type the country…"}
                   autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="next" inputMode="text" onChange={onTyping}
-                  onKeyDown={e=>{if(fb&&e.key==="Enter"){e.preventDefault();next()}}}/>
+                  onKeyDown={e=>{if(fb&&e.key==="Enter"){e.preventDefault();if(e.nativeEvent.isComposing||e.keyCode===229)return;next()}}}/>
                 {fb&&(
                   <div className={"fb "+(fb.ok?"ok":"bad")}>
                     {fb.ok
@@ -286,7 +279,7 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
                 )}
                 {fb
                   ?<button type="button" className="btn" onClick={next}>{i+1>=queue.length?"Finish":"Next"}<span className="kbd-only"><kbd>↵</kbd></span></button>
-                  :<button type="submit" className="btn">Check<span className="kbd-only"><kbd>↵</kbd></span></button>}
+                  :cfg.spell&&<button type="submit" className="btn">Check<span className="kbd-only"><kbd>↵</kbd></span></button>}
               </form>
             )}
           </>

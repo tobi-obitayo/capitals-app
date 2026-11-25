@@ -7,7 +7,7 @@ import {loadPrefs,savePrefs,type Prefs} from "./prefs";
 import {loadWorld50} from "./geo";
 import {WorldMap,type View} from "./components/WorldMap";
 import {Dock} from "./components/Dock";
-import {Panel} from "./components/Panel";
+import {AboutPanel} from "./components/Panel";
 import {CountryCard} from "./components/CountryCard";
 import {DrillModal} from "./components/DrillModal";
 import {FindQuiz} from "./components/FindQuiz";
@@ -15,6 +15,8 @@ import {CapitalQuiz} from "./components/CapitalQuiz";
 import {QuizResults} from "./components/QuizResults";
 import {InfoIcon,Seg} from "./components/ui";
 import {Toaster} from "./components/ui/sonner";
+
+const MOBILE_MQ="(max-width:900px)";
 
 type Overlay=
   |null
@@ -46,6 +48,7 @@ export default function App(){
   const [country,setCountry]=useState<string|null>(null);
   const [idle,setIdle]=useState(false);
   const landscapePhone=useMedia("(orientation: landscape) and (max-height: 520px)");
+  const mobile=useMedia(MOBILE_MQ);
   const [prefs,setPrefsState]=useState<Prefs>(loadPrefs);
   const dockRef=useRef<HTMLDivElement>(null);
   const runCounter=useRef(0);
@@ -91,16 +94,18 @@ export default function App(){
   },[immersive]);
   useEffect(()=>{document.body.classList.toggle("chrome-idle",idle)},[idle]);
 
-  /* outside click closes the (i) panel */
+  /* outside click closes the desktop (i) inspector (the bottom drawer handles mobile) */
   useEffect(()=>{
-    if(!panelOpen)return;
+    if(!panelOpen||mobile)return;
     const onDown=(e:PointerEvent)=>{
-      // popovers inside the panel render in a portal, so they count as inside too
-      if(!(e.target as HTMLElement).closest("#panel,#info-btn,[data-slot=popover-content]"))setPanelOpen(false);
+      // popovers / dialogs render in portals, so they count as inside too
+      if(!(e.target as HTMLElement).closest("#panel,#info-btn,[data-slot=popover-content],dialog")){
+        setPanelOpen(false);
+      }
     };
     document.addEventListener("pointerdown",onDown);
     return()=>document.removeEventListener("pointerdown",onDown);
-  },[panelOpen]);
+  },[panelOpen,mobile]);
 
   /* keyboard */
   useEffect(()=>{
@@ -108,13 +113,12 @@ export default function App(){
       if(e.metaKey||e.ctrlKey||e.altKey)return;
       if(e.defaultPrevented)return;   // an info popover already used this Esc to close itself
       if(document.querySelector("[data-slot=popover-content][data-state=open]"))return;
+      if(document.querySelector("dialog[open]"))return;   // modals and drawers handle their own keys and Esc
       const tag=(e.target as HTMLElement).tagName;
       const inField=tag==="INPUT"||tag==="SELECT"||tag==="TEXTAREA";
       if(e.key==="Escape"){
-        if(overlay){
-          // a running quiz is only ended with its own buttons
-          if(overlay.t==="drill"||overlay.t==="results"){e.preventDefault();setOverlay(null)}
-        }else if(panelOpen){e.preventDefault();setPanelOpen(false);document.getElementById("info-btn")?.focus()}
+        if(overlay)return;
+        if(panelOpen){e.preventDefault();setPanelOpen(false);document.getElementById("info-btn")?.focus()}
         else if(dockOpen){e.preventDefault();setDockOpen(false)}
         return;
       }
@@ -140,10 +144,11 @@ export default function App(){
 
       <Toaster position="top-center"/>
       <div className="float tl">
-        <button id="info-btn" className="icon-btn" aria-label="About and progress" aria-expanded={panelOpen} aria-controls="panel"
+        <button id="info-btn" className="icon-btn" aria-label="About and progress" aria-expanded={panelOpen}
+          aria-controls={mobile?undefined:"panel"}
           onClick={()=>setPanelOpen(o=>!o)}><InfoIcon size={18}/></button>
       </div>
-      {panelOpen&&<Panel onClose={()=>setPanelOpen(false)} onOpen={cn=>openDrill(cn)} onHover={setHighlight}/>}
+      <AboutPanel open={panelOpen} onOpenChange={setPanelOpen} onOpen={cn=>openDrill(cn)} onHover={setHighlight} mobile={mobile}/>
 
       <div className="float tr">
         <Seg label="Map view" value={view} onChange={setView}

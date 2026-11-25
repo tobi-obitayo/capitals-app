@@ -36,8 +36,12 @@ describe("autoMatches",()=>{
     expect(autoMatches(["Nairobi"],"")).toBe(false);
   });
   it("waits when a longer accepted answer starts with what was typed",()=>{
-    expect(autoMatches(["Washington","Washington, D.C."],"washington")).toBe(false);
-    expect(autoMatches(["Washington","Washington, D.C."],"washington dc")).toBe(true);
+    expect(autoMatches(["Washington, D.C.","Washington","Washington DC"],"washington")).toBe(false);
+    expect(autoMatches(["Washington, D.C.","Washington","Washington DC"],"washington dc")).toBe(true);
+  });
+  it("still accepts the primary spelling when an alt is a longer prefix continuation",()=>{
+    expect(autoMatches(["Bern","Berne"],"Bern")).toBe(true);
+    expect(autoMatches(["Bern","Berne"],"Berne")).toBe(true);
   });
   it("never fires on a near miss (that is what spell check is for)",()=>{
     expect(autoMatches(["Ottawa"],"Ottowa")).toBe(false);
