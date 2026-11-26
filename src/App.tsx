@@ -138,6 +138,7 @@ export default function App(){
 
   return(
     <>
+      <h1 className="sr-only">Learn Capitals — world capitals on a map</h1>
       <WorldMap view={view} inset={inset} autoSpin={autoSpin} resetKey={resetKey} paused={paused}
         highlight={highlight} onPick={openDrill} onCountry={setCountry} onTouch={()=>setTouched(true)}/>
       {country&&!paused&&<CountryCard name={country} onOpen={cn=>openDrill(cn)} onClose={()=>setCountry(null)}/>}
