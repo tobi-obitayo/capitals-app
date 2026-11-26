@@ -12,16 +12,6 @@ export const InfoIcon=({size=16}:{size?:number})=>(
 
 export const GearIcon=()=><SettingsIcon size={20} strokeWidth={1.7} aria-hidden="true"/>;
 
-/** (i) icon whose explanation shows on hover or keyboard focus */
-export function Info({children,align="center",label="More info"}:{children:ReactNode;align?:"center"|"left"|"right";label?:string}){
-  return(
-    <span className={"info "+(align==="center"?"":align)} tabIndex={0} role="note" aria-label={label}>
-      <InfoIcon/>
-      <span className="tip">{children}</span>
-    </span>
-  );
-}
-
 export function Seg<T extends string|number>({value,options,onChange,full=false,label}:{
   value:T;options:{value:T;label:ReactNode;shortLabel?:ReactNode;disabled?:boolean;title?:string}[];
   onChange:(v:T)=>void;full?:boolean;label?:string;

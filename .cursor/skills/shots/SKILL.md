@@ -10,7 +10,7 @@ Runs `npm run shots` (from `capitals-app/`), which opens the app in an iPhone 14
 ## Screen IDs (stable, so the user can say "shot 03")
 - `01-landing` world map
 - `02-drill-map-africa` continent map with Start + gear
-- `03-settings-drawer` Vaul settings drawer
+- `03-settings-drawer` settings drawer
 - `04-find-quiz-africa` find the country: top bar, insets, controls
 - `05-find-quiz-zoomed` find the country after zooming
 - `06-capital-quiz-keyboard` name the capital in a keyboard-sized viewport

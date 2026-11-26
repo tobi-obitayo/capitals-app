@@ -92,18 +92,6 @@ kbd{font:inherit;font-size:11px;font-weight:600;color:var(--ink);background:var(
 .link{border:0;background:none;color:var(--faint);font-size:12px;text-decoration:underline;padding:0;margin-top:14px}
 .link:hover{color:var(--bad)}
 
-/* ---------- info icon + tooltip ---------- */
-.info{position:relative;display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;color:var(--faint);vertical-align:middle;cursor:help;outline-offset:3px}
-.info:hover,.info:focus-visible{color:var(--navy)}
-.info svg{width:16px;height:16px}
-.info .tip{display:none;position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);width:max-content;max-width:260px;z-index:60;
-  background:var(--ink);color:#fff;font-size:12px;line-height:1.45;font-weight:400;letter-spacing:0;text-transform:none;text-align:left;padding:8px 10px;border-radius:8px;white-space:normal}
-.info:hover .tip,.info:focus .tip{display:block}
-.info.left .tip{left:auto;right:-8px;transform:none}
-.info.right .tip{left:-8px;transform:none}
-.tip kbd{background:rgba(255,255,255,.18);border-color:transparent;color:#fff}
-.tip .row{display:flex;justify-content:space-between;gap:16px}
-
 /* ---------- drill modal (large) ---------- */
 dialog.modal::backdrop{background:rgba(15,23,42,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fadein .18s ease;overflow:hidden;overscroll-behavior:contain}
 @keyframes fadein{from{opacity:0}to{opacity:1}}

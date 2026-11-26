@@ -72,7 +72,6 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const{mi,dir,batch,tab,cfg}=prefs;
   const set=(p:Partial<Prefs>)=>setPrefs({...prefs,...p});
   const c2k=dir==="c2k";
-  const effTab=tab;
 
   const[screen,setScreen]=useState<"setup"|"run"|"done">("setup");
   const[queue,setQueue]=useState<Country[]>([]);
@@ -165,7 +164,7 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const s=stats(cn);
   const dirName=c2k?"Country → Capital":"Capital → Country";
   const sub=screen==="setup"
-    ?(effTab==="quiz"?`Quiz · ${s.total} countries`:`${s.total} countries · ${s.mastered} mastered · ${s.learning} learning`)
+    ?(tab==="quiz"?`Quiz · ${s.total} countries`:`${s.total} countries · ${s.mastered} mastered · ${s.learning} learning`)
     :`${MODE_NAMES[mi]} · ${dirName}`;
 
   const revealed=flipped||sel!==null||!!fb;
@@ -177,21 +176,21 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
   const startQuiz=()=>{setSettingsOpen(false);onStartQuiz(cfg)};
 
   const setupMap=mobile&&screen==="setup";
-  const startLabel=effTab==="learn"
+  const startLabel=tab==="learn"
     ?`Start drill · ${learnCount} cards`
     :`Start quiz · ${countriesIn(cn).length} countries`;
-  const onStart=effTab==="learn"?startLearn:startQuiz;
+  const onStart=tab==="learn"?startLearn:startQuiz;
 
   const settingsBody=(
     <>
       <div className="field">
-        <Seg full label="Learn or quiz" value={effTab} onChange={v=>{set({tab:v});setMapFocus(false)}}
+        <Seg full label="Learn or quiz" value={tab} onChange={v=>{set({tab:v});setMapFocus(false)}}
           options={[
             {value:"learn",label:"Learn"},
             {value:"quiz",label:"Quiz"},
           ]}/>
       </div>
-      {effTab==="learn"
+      {tab==="learn"
         ?<LearnSetup cn={cn} prefs={prefs} set={set} onStart={startLearn}/>
         :<QuizSetup cn={cn} cfg={cfg} setCfg={c=>set({cfg:c})} onStart={startQuiz}/>}
     </>
@@ -209,7 +208,6 @@ export function DrillModal({cn,prefs,setPrefs,onClose,onStartQuiz}:Props){
     <>
       <ModalShell title={`${cn} Capitals`} sub={sub} onClose={onClose}
         hideMap={screen==="run"&&mi===2}
-        compactMap={false}
         setupMap={setupMap}
         right={
           <DrillMap cn={cn} fill={fill} hl={hl} showLegend={screen!=="run"} bottomPad={setupMap?SETUP_CTA_PAD:0}

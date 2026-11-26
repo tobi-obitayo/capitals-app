@@ -50,7 +50,7 @@ Find the country by tapping the map, or name the capital — with timers, hard m
 
 **Mastery unlocks World**
 
-Map tint shows what you know. Master countries (2 correct) and unlock the full world at 80% — progress stays in your browser.
+Map tint shows what you know. Answer a country correctly twice (a miss steps it back) to master it, and unlock the full world at 80% — progress stays in your browser.
 
 </td>
 </tr>

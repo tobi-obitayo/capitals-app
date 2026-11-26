@@ -22,6 +22,13 @@ export function record(k:string,ok:boolean){
   save();emit();
 }
 export function resetProgress(){prog={};save();emit()}
+/** raise levels from a restored backup (never lowers one); returns how many countries changed. Callers pass only known country names. */
+export function mergeProgress(levels:ReadonlyMap<string,number>):number{
+  let n=0;
+  for(const[k,v] of levels)if(v>lvl(k)){prog[k]=Math.min(3,v);n++}
+  if(n){save();emit()}
+  return n;
+}
 
 export function stats(cn:Scope){
   const a=countriesIn(cn);
