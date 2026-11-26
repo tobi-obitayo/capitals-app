@@ -84,7 +84,7 @@ const GitHubMark=()=>(
 );
 
 /** set to your Ko-fi page (e.g. "https://ko-fi.com/yourname"); the button only shows once this is filled in */
-const KOFI_URL="";
+const KOFI_URL="https://ko-fi.com/tobiobitayo";
 
 const supportLink="text-foreground no-underline hover:text-accent-foreground";
 
