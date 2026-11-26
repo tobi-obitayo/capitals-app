@@ -7,7 +7,7 @@
  *  1. globe canvas keeps matching its on-screen size even when the window never fires "resize" (iOS toolbars)
  *  2. Find-the-country bar: for the longest names at many widths, the X stays on the first row, nothing
  *     overflows, no word is broken in the middle, the name never runs under the X (long names shrink to one line), and the X is never on the row with Skip / Give up
- *  3. continent list can be closed on a phone          (both ?dock=1 and ?dock=2)
+ *  3. continent list can be closed on a phone
  *  4. results fit on one screen, answers scroll inside their own list
  */
 import path from "node:path";
@@ -111,26 +111,22 @@ const WIDTHS=[320,360,390,430,600,700,701,768,820,1024,1280];
   check(bad===0,`Find bar: ${NAMES.length*WIDTHS.length} name/width combinations OK (${bad} problems)`);
 }
 
-/* 3. continent list */
-for(const dock of [1,2]){
-  const {ctx,page,open}=await phone(390,844,`?dock=${dock}`);
+/* 3. continent list: the chevron rides on the open list and closes it */
+{
+  const {ctx,page,open}=await phone(390,844);
   await open();
   await page.getByRole("button",{name:"Show continent list"}).click();await pause(700);
-  const closeBtn=dock===1?page.getByRole("button",{name:"Close continent list"}):page.getByRole("button",{name:"Hide continent list"});
+  const closeBtn=page.getByRole("button",{name:"Hide continent list"});
   const box=await closeBtn.boundingBox();
   const top=box&&await page.evaluate(([x,y])=>{const e=document.elementFromPoint(x,y);return e?.closest("button")?.getAttribute("aria-label")},[box.x+box.width/2,box.y+box.height/2]);
-  check(!!box&&top===await closeBtn.getAttribute("aria-label"),`dock variant ${dock}: the close control is on top and tappable (${box?Math.round(box.width)+"x"+Math.round(box.height):"missing"})`);
-  await page.screenshot({path:path.join(root,"shots",`dock-${dock}-open.png`)});
+  check(!!box&&top==="Hide continent list",`dock: the close chevron is on top of the open list and tappable (${box?Math.round(box.width)+"x"+Math.round(box.height):"missing"})`);
+  await page.screenshot({path:path.join(root,"shots","dock-open.png")});
   await closeBtn.click();await pause(600);
-  const shown=await page.evaluate(()=>document.querySelector("#dock").classList.contains("show"));
-  check(!shown,`dock variant ${dock}: tapping it closes the list`);
-  if(dock===1){
-    await page.getByRole("button",{name:"Show continent list"}).click();await pause(600);
-    const head=await page.locator(".dock-head").boundingBox();
-    await page.mouse.move(head.x+head.width/2,head.y+10);await page.mouse.down();
-    await page.mouse.move(head.x+head.width/2,head.y+80,{steps:8});await page.mouse.up();await pause(500);
-    check(!await page.evaluate(()=>document.querySelector("#dock").classList.contains("show")),"dock variant 1: swiping down closes the list");
-  }
+  check(!await page.evaluate(()=>document.querySelector("#dock").classList.contains("show")),"dock: tapping the chevron closes the list");
+  // iOS does not focus a button on tap, so a chip can keep focus (and :focus-within keeps the list open) unless closing blurs it
+  await page.getByRole("button",{name:"Show continent list"}).click();await pause(600);
+  await page.evaluate(()=>{document.querySelector("#dock .chip").focus();document.querySelector(".handle").dispatchEvent(new MouseEvent("click",{bubbles:true}))});await pause(600);
+  check(!await page.evaluate(()=>document.querySelector("#dock").classList.contains("show")),"dock: closes even while a continent chip has focus");
   await ctx.close();
 }
 
