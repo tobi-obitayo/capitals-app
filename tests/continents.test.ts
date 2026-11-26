@@ -37,7 +37,7 @@ describe("quizzes for every continent",()=>{
     const world=await loadWorld50();
     const expectIds:Record<string,string[]>={
       "North America":["main","antilles"],
-      Europe:["main","micro"],
+      Europe:["main","micro","rome"],
       Africa:["main","atlantic","gulf","indian"],
       Asia:["main","gulf","maldives","singapore"],
       Oceania:["main","micronesia","polynesia"],

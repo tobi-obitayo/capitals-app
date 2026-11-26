@@ -1,5 +1,7 @@
-import type {ReactNode} from "react";
+import {useRef,type ReactNode} from "react";
+import {HourglassIcon,SettingsIcon,TimerIcon} from "lucide-react";
 import {fmtTime} from "../util";
+import {InfoPopover} from "./InfoPopover";
 import type {QuizClock} from "../quiz";
 
 export const InfoIcon=({size=16}:{size?:number})=>(
@@ -8,12 +10,7 @@ export const InfoIcon=({size=16}:{size?:number})=>(
   </svg>
 );
 
-export const GearIcon=()=>(
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="12" cy="12" r="3"/>
-    <path d="M12 1.5v2.2M12 20.3v2.2M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M1.5 12h2.2M20.3 12h2.2M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/>
-  </svg>
-);
+export const GearIcon=()=><SettingsIcon size={20} strokeWidth={1.7} aria-hidden="true"/>;
 
 /** (i) icon whose explanation shows on hover or keyboard focus */
 export function Info({children,align="center",label="More info"}:{children:ReactNode;align?:"center"|"left"|"right";label?:string}){
@@ -54,10 +51,10 @@ export function Switch({on,onChange,label}:{on:boolean;onChange:(v:boolean)=>voi
 }
 
 /** labelled setting; `note` is one quiet sentence of explanation (no hidden tooltips) */
-export function Field({label,note,children}:{label:string;note?:ReactNode;children:ReactNode}){
+export function Field({label,note,info,children}:{label:string;note?:ReactNode;/** explanation behind an (i) next to the label */info?:ReactNode;children:ReactNode}){
   return(
     <div className="field">
-      <div className="lbl">{label}</div>
+      <div className="lbl">{label}{info!=null&&<InfoPopover label={`About ${label.toLowerCase()}`}>{info}</InfoPopover>}</div>
       {children}
       {note&&<p className="note">{note}</p>}
     </div>
@@ -66,21 +63,34 @@ export function Field({label,note,children}:{label:string;note?:ReactNode;childr
 
 export const Kbd=({children}:{children:ReactNode})=><kbd>{children}</kbd>;
 
-/** countdown (or count-up when the limit is off) with a button that turns the limit off/on */
+/**
+ * Countdown, or a stopwatch once the limit is off. Double-click (or double-tap) the clock to switch;
+ * a single click does nothing, so a stray tap never drops the limit.
+ */
 export function ClockPill({clock,timerConfigured}:{clock:QuizClock;timerConfigured:boolean}){
   const low=clock.limitOn&&clock.remaining<=10;
-  return(
-    <div className={"clock"+(low?" low":"")+(clock.limitOn?"":" off")}>
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-        <circle cx="8" cy="9" r="5.2"/><path d="M8 6.2V9l1.8 1.2M6.3 1.8h3.4"/>
-      </svg>
+  const lastTap=useRef(-Infinity);
+  const cls="clock"+(low?" low":"")+(clock.limitOn?"":" off");
+  const Icon=clock.limitOn?HourglassIcon:TimerIcon;
+  const body=(
+    <>
+      <Icon size={16} strokeWidth={1.8} aria-hidden="true"/>
       <span className="t" aria-live="off">{clock.limitOn?fmtTime(clock.remaining):fmtTime(clock.elapsed)}</span>
-      {timerConfigured&&(
-        <button type="button" className="clock-toggle" onClick={clock.toggleLimit} aria-pressed={clock.limitOn}
-          title={clock.limitOn?"Turn the time limit off":"Turn the time limit back on"}>
-          {clock.limitOn?"Limit on":"No limit"}
-        </button>
-      )}
-    </div>
+    </>
+  );
+  if(!timerConfigured)return <div className={cls}>{body}</div>;
+  // own double-tap timing: browsers differ on whether a double tap on a phone fires `dblclick`
+  const tap=()=>{
+    const now=performance.now();
+    if(now-lastTap.current<400){lastTap.current=-Infinity;clock.toggleLimit()}
+    else lastTap.current=now;
+  };
+  const what=clock.limitOn?"Countdown":"Stopwatch";
+  return(
+    <button type="button" className={cls+" switchable"} onClick={tap}
+      aria-label={`${what} ${fmtTime(clock.limitOn?clock.remaining:clock.elapsed)}. Double-click to switch to the ${clock.limitOn?"stopwatch":"countdown"}.`}
+      title={clock.limitOn?"Double-click for a stopwatch":"Double-click to bring the countdown back"}>
+      {body}
+    </button>
   );
 }

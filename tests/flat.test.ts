@@ -1,7 +1,8 @@
 import {describe,expect,it} from "vitest";
 import {baseFactor,flatLayout,FLAT_HOME,FLAT_ZOOM_MAX,makeFlatProjection,zoomFlatAt} from "../src/map/flat";
 
-const lay=(W:number,H:number,v=FLAT_HOME)=>flatLayout(makeFlatProjection(),W,H,v);
+const FIT={zoom:1,px:0,py:0};   // the whole world across (FLAT_HOME opens 20% closer)
+const lay=(W:number,H:number,v=FIT)=>flatLayout(makeFlatProjection(),W,H,v);
 
 describe("flat map layout",()=>{
   it("shows the whole world across on landscape screens (desktop, phone held sideways)",()=>{

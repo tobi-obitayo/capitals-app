@@ -190,7 +190,7 @@ describe("timer",()=>{
     vi.useFakeTimers({toFake:["setInterval","clearInterval","setTimeout","clearTimeout","performance","Date"]});
     render(<App/>);
     openNorthAmericaQuiz("Name the capital");
-    click("1 min");
+    setMinutes(1);
     click(/Start quiz/);
     expect(screen.getByText("1:00")).toBeTruthy();
     act(()=>{vi.advanceTimersByTime(30_000)});
@@ -204,14 +204,17 @@ describe("timer",()=>{
     vi.useFakeTimers({toFake:["setInterval","clearInterval","setTimeout","clearTimeout","performance","Date"]});
     render(<App/>);
     openNorthAmericaQuiz("Name the capital");
-    click("1 min");
+    setMinutes(1);
     click(/Start quiz/);
-    click("Limit on");
-    expect(screen.getByRole("button",{name:"No limit"})).toBeTruthy();
-    act(()=>{vi.advanceTimersByTime(120_000)});
+    click(/Countdown/);                                       // a single click does nothing
+    expect(screen.getByRole("button",{name:/^Countdown/})).toBeTruthy();
+    act(()=>{vi.advanceTimersByTime(1_000)});
+    doubleClick(/Countdown/);
+    expect(screen.getByRole("button",{name:/^Stopwatch/})).toBeTruthy();
+    act(()=>{vi.advanceTimersByTime(119_000)});               // 1s already ran above
     expect(screen.queryByText("Time's up")).toBeNull();
     expect(screen.getByText("2:00")).toBeTruthy();         // counts up while the limit is off
-    click("No limit");
+    doubleClick(/Stopwatch/);
     act(()=>{vi.advanceTimersByTime(61_000)});
     expect(screen.getByText("Time's up")).toBeTruthy();
   });
@@ -228,22 +231,49 @@ describe("timer",()=>{
   });
 });
 
+function setMinutes(n:number){
+  fireEvent.change(screen.getByLabelText("Custom minutes"),{target:{value:String(n)}});
+}
+function doubleClick(name:RegExp){
+  const b=screen.getByRole("button",{name});
+  fireEvent.click(b);fireEvent.click(b);
+}
+
+describe("quiz setup timer row",()=>{
+  it("has two presets and a typed box on one row, and the typed minutes become the limit",()=>{
+    render(<App/>);
+    openNorthAmericaQuiz("Name the capital");
+    const row=document.querySelector(".presets")!;
+    expect(row.querySelectorAll("button.preset").length).toBe(2);
+    expect(row.querySelectorAll("input").length).toBe(1);
+    expect(screen.getByRole("button",{name:"5 min"}).getAttribute("aria-pressed")).toBe("true");
+    setMinutes(50);
+    expect(screen.getByRole("button",{name:"5 min"}).getAttribute("aria-pressed")).toBe("false");
+    expect((screen.getByLabelText("Custom minutes") as HTMLInputElement).value).toBe("50");
+    click("10 min");
+    expect((screen.getByLabelText("Custom minutes") as HTMLInputElement).value).toBe("");
+  });
+});
+
 describe("no hidden tooltips in the drill and quiz modals",()=>{
-  it("setup screens have no (i) icons; settings explain themselves in one line",()=>{
+  it("setup screens have no hover tooltips; spelling is explained behind an (i) button, the rest in one line",()=>{
     render(<App/>);
     fireEvent.keyDown(window,{key:"4"});
     expect(document.querySelector(".modal .info")).toBeNull();
     click("Type it");
     expect(document.querySelector(".modal .info")).toBeNull();
-    expect(screen.getByText(/Small typos and missing accents are forgiven/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("switch",{name:"Spell check"}));
+    expect(screen.queryByText(/small typos and missing accents are forgiven/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button",{name:"About spelling"}));
+    expect(screen.getByText(/small typos and missing accents are forgiven/i)).toBeTruthy();
     expect(screen.getByText(/checks the moment you type it right/)).toBeTruthy();
+    fireEvent.keyDown(document.activeElement??document.body,{key:"Escape"});
     click("Quiz");
     expect(document.querySelector(".modal .info")).toBeNull();
     click("Find the country");
-    expect(screen.getByText(/Keep tapping until you find it/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("switch",{name:"Hard mode"}));
-    expect(screen.getByText(/One try per country/)).toBeTruthy();
+    expect(screen.queryByText(/keep tapping until you find it/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button",{name:"About mode"}));
+    expect(screen.getByText(/keep tapping until you find it/i)).toBeTruthy();
+    expect(screen.getByText(/one try per country/i)).toBeTruthy();
   });
 });
 
@@ -402,6 +432,7 @@ describe("find the country quiz",()=>{
     const giveUp=screen.queryByRole("button",{name:"Give up"});
     if(giveUp)fireEvent.click(giveUp);
     await screen.findByText(/You gave up|Quiz complete/);
+    fireEvent.click(screen.getByRole("button",{name:/^Got it \(/}));   // the right answers sit on their own tab
     const row=screen.getAllByText("Barbados")[0].closest("li")!;
     expect(row.className).toBe("ok");
   });

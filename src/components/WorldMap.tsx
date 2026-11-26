@@ -2,6 +2,7 @@ import {useEffect,useRef} from "react";
 import {geoOrthographic,type GeoProjection} from "d3";
 import {getLanding,loadLanding50,peekLanding50,type World} from "../geo";
 import {drawLanding,elephantHit,pickContinent,vq} from "../map/landing";
+import {spinRotation} from "../map/spin";
 import {flingFrom,pushSample,stepFling,type Fling,type Sample} from "../map/fling";
 import {
   DETAIL_SCALE,drawFlat,FLAT_HOME,FLAT_ZOOM_MAX,flatLayout,LABEL_ZOOM,labelsStale,makeFlatProjection,newLabels,pickCountryFlat,unwrapFlatX,zoomFlatAt,
@@ -36,6 +37,8 @@ interface Props{
 
 const HOME:[number,number,number]=[-15,-25,0];
 const INTRO_MS=1800;
+/** how far the globe zooms in, and from which zoom the sharper 50m coastlines take over from the 110m ones (once the globe has been still for a moment: the 50m outlines are too heavy to redraw every frame) */
+const GLOBE_ZOOM_MAX=6,GLOBE_DETAIL_ZOOM=2,GLOBE_SETTLE_MS=200;
 
 interface State{
   view:View;rotate:[number,number,number];zoom:number;inset:number;
@@ -100,8 +103,14 @@ export function WorldMap(props:Props){
       globe.translate([W/2,AH/2]).scale(globeScale()).rotate(s.rotate);
       s.dirty=true;
     };
+    /* the bitmap always matches the size the canvas is actually shown at: phone browsers change the visible
+       height (toolbars, tab bar, restored tabs) without a window "resize", and a stale size stretches the map */
     const setup=()=>{
-      W=innerWidth;H=innerHeight;dpr=Math.min(devicePixelRatio||1,2);
+      const r=canvas.getBoundingClientRect();
+      const w=r.width||innerWidth,h=r.height||innerHeight;
+      const d=Math.min(devicePixelRatio||1,2);
+      if(w===W&&h===H&&d===dpr&&canvas.width>0)return;
+      W=w;H=h;dpr=d;
       canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);
       layout();
     };
@@ -109,9 +118,12 @@ export function WorldMap(props:Props){
     /* pan / zoom input is recorded by the handlers and applied once per frame by Gestures.tick() */
     const cam:Camera={
       zoom:()=>s.view==="globe"?s.zoom:s.flat.zoom,
-      range:()=>s.view==="globe"?[.7,3]:[s.lay?.minZoom??1,FLAT_ZOOM_MAX],
+      range:()=>s.view==="globe"?[.7,GLOBE_ZOOM_MAX]:[s.lay?.minZoom??1,FLAT_ZOOM_MAX],
       zoomAt:(x,y,z)=>{
-        if(s.view==="globe")s.zoom=Math.max(.7,Math.min(3,z));
+        if(s.view==="globe"){
+          s.zoom=Math.max(.7,Math.min(GLOBE_ZOOM_MAX,z));
+          if(s.zoom>GLOBE_DETAIL_ZOOM*.8)loadLanding50().then(()=>{if(alive)s.dirty=true});   // fetched before it is needed
+        }
         else if(s.lay)s.flat=zoomFlatAt(s.lay,x,y,z);
         layout();
       },
@@ -123,6 +135,18 @@ export function WorldMap(props:Props){
     };
     const g=new Gestures(cam);
 
+    /** the globe moves on the light 110m world, then settles onto the sharper 50m one when zoomed in and still */
+    let stillKey="",settleAt=0,sharp=false;
+    const detailPending=()=>s.view==="globe"&&s.zoom>=GLOBE_DETAIL_ZOOM&&!sharp&&settleAt>0&&peekLanding50()!==null;
+    const globeWorld=():World|null=>{
+      if(s.view!=="globe"||s.zoom<GLOBE_DETAIL_ZOOM){sharp=false;return world}
+      const d=peekLanding50();
+      const key=s.rotate.join()+"|"+s.zoom+"|"+W+"|"+H;
+      const now=performance.now();
+      if(key!==stillKey){stillKey=key;settleAt=now+GLOBE_SETTLE_MS;sharp=false;return world}
+      if(d&&now>=settleAt&&now-s.lastTouch>=GLOBE_SETTLE_MS){sharp=true;return d}
+      return world;
+    };
     const hv=()=>s.hover??pr.current.highlight;
     const draw=()=>{
       s.dirty=false;
@@ -139,7 +163,7 @@ export function WorldMap(props:Props){
         return;
       }
       if(s.view==="globe")globe.translate([W/2,availH()/2]).rotate(s.rotate).scale(globeScale());
-      drawLanding(ctx,world,{W,H,view:s.view,proj:proj(),hover:hv(),frac:cn=>stats(cn).frac,elephant:!worldUnlocked()});
+      drawLanding(ctx,globeWorld()??world,{W,H,view:s.view,proj:proj(),hover:hv(),frac:cn=>stats(cn).frac,elephant:!worldUnlocked()});
     };
 
     /* ---- label ---- */
@@ -172,7 +196,7 @@ export function WorldMap(props:Props){
 
     /* ---- pointer: hover, click, trackball drag, pinch zoom ---- */
     const pointers=new Map<number,[number,number]>();
-    let drag:null|{pt:[number,number];moved:boolean;v0?:[number,number,number];q0?:ReturnType<typeof vq.fromEuler>;r0?:[number,number,number]}=null;
+    let drag:null|{pt:[number,number];moved:boolean;v0?:[number,number,number];l0?:[number,number];q0?:ReturnType<typeof vq.fromEuler>;r0?:[number,number,number]}=null;
     /* the pointer to look under for hover: picking runs once per frame, not once per move event */
     let hoverEv:null|PointerEvent=null,hoverPt:[number,number]=[0,0];
     /* globe momentum: recent drag samples, and the fling left after letting go */
@@ -184,7 +208,7 @@ export function WorldMap(props:Props){
       if(s.view==="globe"){
         globe.rotate(s.rotate);
         const ll=globe.invert!(pt) as [number,number];
-        drag.v0=vq.cart(ll);drag.q0=vq.fromEuler(s.rotate);drag.r0=[...s.rotate];
+        drag.v0=vq.cart(ll);drag.l0=ll;drag.q0=vq.fromEuler(s.rotate);drag.r0=[...s.rotate];
       }else{
         g.dragBegin(pt[0],pt[1]);
         if(moved)g.dragGo();
@@ -222,9 +246,11 @@ export function WorldMap(props:Props){
       }
       if(drag&&s.view==="globe"){
         if(Math.hypot(pt[0]-drag.pt[0],pt[1]-drag.pt[1])>TAP_SLOP){drag.moved=true;s.dragging=true;setCursor("dragging")}
-        if(drag.moved&&drag.r0&&drag.q0&&drag.v0){
+        if(drag.moved&&drag.r0&&drag.q0&&drag.v0&&drag.l0){
           const ll=globe.rotate(drag.r0).invert!(pt) as [number,number];
-          const q1=vq.mul(drag.q0,vq.delta(drag.v0,vq.cart(ll)));
+          const track=vq.mul(drag.q0,vq.delta(drag.v0,vq.cart(ll)));
+          // a mostly horizontal drag spins the globe on its axis (same latitudes); diagonal and vertical ones turn it freely
+          const q1=spinRotation(track,drag.r0,drag.l0,ll,pt[0]-drag.pt[0],pt[1]-drag.pt[1]);
           s.rotate=vq.toEuler(q1);globe.rotate(s.rotate);s.dirty=true;s.lastTouch=performance.now();
           pushSample(samples,{t:s.lastTouch,q:vq.fromEuler(s.rotate)});
         }
@@ -298,6 +324,12 @@ export function WorldMap(props:Props){
     canvas.addEventListener("pointerleave",onLeave);
     canvas.addEventListener("wheel",onWheel,{passive:false});
     addEventListener("resize",setup);
+    addEventListener("orientationchange",setup);
+    addEventListener("pageshow",setup);
+    const vv=window.visualViewport;
+    vv?.addEventListener("resize",setup);
+    const ro=typeof ResizeObserver==="function"?new ResizeObserver(setup):null;
+    ro?.observe(canvas);
 
     /* ---- view switch + reset ---- */
     s.applyView=(v)=>{
@@ -351,6 +383,7 @@ export function WorldMap(props:Props){
       if(intro)s.dirty=true;
       const h=hv();if(h!==s.lastHv){s.lastHv=h;s.dirty=true}
       if(s.view==="flat"&&s.lay&&labelsStale(labels,s.lay,performance.now()))s.dirty=true;   // the map moved: pick the names again
+      if(detailPending()&&t>=settleAt&&performance.now()-s.lastTouch>=GLOBE_SETTLE_MS)s.dirty=true;   // still for a moment: redraw once with the sharper outlines
       if(s.dirty)draw();
       raf=requestAnimationFrame(frame);
     };
@@ -372,6 +405,10 @@ export function WorldMap(props:Props){
       canvas.removeEventListener("pointerleave",onLeave);
       canvas.removeEventListener("wheel",onWheel);
       removeEventListener("resize",setup);
+      removeEventListener("orientationchange",setup);
+      removeEventListener("pageshow",setup);
+      vv?.removeEventListener("resize",setup);
+      ro?.disconnect();
     };
   },[]);
 

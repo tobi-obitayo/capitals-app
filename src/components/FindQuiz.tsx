@@ -18,6 +18,10 @@ interface Props{
 
 const FLASH_MS=800;
 const QUIZ_BAR_FALLBACK=84;
+/** smallest a country name shrinks to (to stay on one line) before it wraps instead */
+const NAME_MIN_PX=15;
+/** size used when a name has to wrap anyway */
+const NAME_WRAP_PX=20;
 const RESET_BTN=44;
 
 /** Full-screen "tap the country" quiz on a pan/zoom map. */
@@ -35,6 +39,8 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
 
   const canvasRef=useRef<HTMLCanvasElement>(null);
   const hudRef=useRef<HTMLDivElement>(null);
+  const promptRef=useRef<HTMLDivElement>(null);
+  const nameRef=useRef<HTMLSpanElement>(null);
   const screenRef=useRef<HTMLDivElement>(null);
   const topInset=useRef(QUIZ_BAR_FALLBACK);
   const [toastTop,setToastTop]=useState(92);
@@ -145,6 +151,33 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
     return()=>ro.disconnect();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[cn,cfg.hard,answered]);
+
+  /* long names shrink to stay on one line (down to NAME_MIN_PX); beyond that they wrap at NAME_WRAP_PX */
+  useLayoutEffect(()=>{
+    const p=promptRef.current,t=nameRef.current;
+    if(!p||!t)return;
+    const phone=()=>typeof matchMedia==="function"&&matchMedia("(max-width:1000px)").matches;
+    const fit=()=>{
+      p.classList.remove("fit");t.style.fontSize="";
+      if(!phone()||t.getClientRects().length<=1)return;       // already one line at full size
+      p.classList.add("fit");
+      const cs=getComputedStyle(p),kicker=p.querySelector<HTMLElement>(".qh-kicker");
+      const base=parseFloat(getComputedStyle(t).fontSize);
+      const room=p.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight)-(kicker?kicker.offsetWidth+parseFloat(getComputedStyle(kicker).marginRight):0);
+      const w=t.getBoundingClientRect().width;
+      const px=Math.floor(Math.min(base,base*room/w)*10)/10;
+      if(px>=NAME_MIN_PX)t.style.fontSize=px+"px";
+      else{p.classList.remove("fit");t.style.fontSize=NAME_WRAP_PX+"px"}   // too long even when small: wrap onto two lines instead
+    };
+    let lastW=0;
+    const ro=new ResizeObserver(()=>{const w=p.clientWidth;if(w!==lastW){lastW=w;fit()}});
+    ro.observe(p);
+    const mo=new MutationObserver(fit);                         // the name changed
+    mo.observe(t,{childList:true,characterData:true,subtree:true});
+    fit();
+    void document.fonts?.ready.then(fit);
+    return()=>{ro.disconnect();mo.disconnect()};
+  },[]);
 
   /* ---------- draw + input ---------- */
   useEffect(()=>{
@@ -288,9 +321,9 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
       <canvas ref={canvasRef} className="qcanvas" aria-label={`Map of ${cn}. Tap the country you are asked to find.`}/>
 
       <div className="qhud" ref={hudRef} role="region" aria-label="Quiz status">
-        <div className="qh-prompt">
+        <div className="qh-prompt" ref={promptRef}>
           <span className="qh-kicker">Find</span>
-          <span className="qh-target" aria-live="polite">{target?.k??"…"}</span>
+          <span className="qh-target" ref={nameRef} aria-live="polite">{target?.k??"…"}</span>
         </div>
         <div className="qh-meta">
           <b>{progressLabel}</b>
@@ -317,7 +350,6 @@ export function FindQuiz({cn,cfg,items,onFinish,onExit}:Props){
       {zoomed&&(
         <button className="icon-btn reset-view" style={{top:toastTop}} aria-label="Reset view" title="Reset view" onClick={resetView}>⌖</button>
       )}
-      <div className="qhint">Drag to pan · pinch or scroll to zoom{scene.current&&scene.current.panels.length>1?" · small islands are in the boxes":""}</div>
     </div>
   );
 }

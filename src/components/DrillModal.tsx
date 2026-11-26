@@ -15,6 +15,25 @@ const MODE_NAMES=["Flashcards","Multiple choice","Type it"]as const;
 const MODE_SHORT=["Cards","Choice","Type"]as const;
 const MOBILE_MQ="(max-width:900px)";
 const SETUP_CTA_PAD=88;
+const SPELL_INFO=(
+  <>
+    <p><b className="text-foreground">On:</b> small typos and missing accents are forgiven. Press Enter to check.</p>
+    <p className="mt-2"><b className="text-foreground">Off:</b> needs the exact spelling (capitals and accents don't matter) and checks the moment you type it right.</p>
+  </>
+);
+
+const TIMER_INFO=(
+  <>
+    <p>During the quiz, double-click the clock to turn the countdown into a stopwatch. Double-click again to bring the countdown back.</p>
+    <p className="mt-2">A single click does nothing.</p>
+  </>
+);
+const MODE_INFO=(
+  <>
+    <p><b className="text-foreground">Normal:</b> keep tapping until you find it. It only counts as correct if your first tap was right.</p>
+    <p className="mt-2"><b className="text-foreground">Hard:</b> one try per country. A wrong tap marks it missed and moves on.</p>
+  </>
+);
 
 function useMobile(){
   const[m,setM]=useState(()=>typeof matchMedia==="function"&&matchMedia(MOBILE_MQ).matches);
@@ -317,7 +336,7 @@ function LearnSetup({cn,prefs,set,onStart}:{cn:Scope;prefs:Prefs;set:(p:Partial<
           }))}/>
       </Field>
       {prefs.mi===2&&(
-        <Field label="Spelling" note={prefs.cfg.spell?"Small typos and missing accents are forgiven. Press Enter to check.":"Needs the exact spelling (capitals and accents don't matter) and checks the moment you type it right."}>
+        <Field label="Spelling" info={SPELL_INFO}>
           <div className="toggle-row">
             <Switch on={prefs.cfg.spell} onChange={v=>set({cfg:{...prefs.cfg,spell:v}})} label="Spell check"/>
             <span>{prefs.cfg.spell?"Spell check on":"Spell check off"}</span>
@@ -352,6 +371,8 @@ function QuizSetup({cn,cfg,setCfg,onStart}:{cn:Scope;cfg:QuizCfg;setCfg:(c:QuizC
   const up=(p:Partial<QuizCfg>)=>setCfg({...cfg,...p});
   const minutes=Math.round(cfg.seconds/60);
   const isPreset=TIMER_PRESETS.includes(cfg.seconds);
+  // what is typed in the box; kept apart from the setting so "50" can be typed through "5"
+  const [typed,setTyped]=useState(isPreset?"":String(minutes));
   return(
     <>
       <Field label="Quiz">
@@ -359,7 +380,7 @@ function QuizSetup({cn,cfg,setCfg,onStart}:{cn:Scope;cfg:QuizCfg;setCfg:(c:QuizC
           options={[{value:"find",label:"Find the country"},{value:"capital",label:"Name the capital"}]}/>
       </Field>
 
-      <Field label="Timer">
+      <Field label="Timer" info={TIMER_INFO}>
         <div className="toggle-row">
           <Switch on={cfg.timerOn} onChange={v=>up({timerOn:v})} label="Time limit"/>
           <span>{cfg.timerOn?"Time limit on":"No time limit"}</span>
@@ -367,11 +388,17 @@ function QuizSetup({cn,cfg,setCfg,onStart}:{cn:Scope;cfg:QuizCfg;setCfg:(c:QuizC
         {cfg.timerOn&&(
           <div className="presets">
             {TIMER_PRESETS.map(sec=>(
-              <button key={sec} type="button" className="preset" aria-pressed={cfg.seconds===sec} onClick={()=>up({seconds:sec})}>{sec/60} min</button>
+              <button key={sec} type="button" className="preset" aria-pressed={cfg.seconds===sec}
+                onClick={()=>{setTyped("");up({seconds:sec})}}>{sec/60} min</button>
             ))}
             <label className={"preset custom"+(isPreset?"":" on")}>
-              <input type="number" min={1} max={180} value={minutes} aria-label="Custom minutes"
-                onChange={e=>{const v=Math.max(1,Math.min(180,Math.round(+e.target.value||1)));up({seconds:v*60})}}/>
+              <input type="number" inputMode="numeric" min={1} max={180} placeholder="Other" value={typed} aria-label="Custom minutes"
+                onChange={e=>{
+                  setTyped(e.target.value);
+                  const v=Math.round(+e.target.value);
+                  if(v>=1)up({seconds:Math.min(180,v)*60});
+                }}
+                onBlur={()=>setTyped(isPreset?"":String(minutes))}/>
               <span>min</span>
             </label>
           </div>
@@ -379,14 +406,14 @@ function QuizSetup({cn,cfg,setCfg,onStart}:{cn:Scope;cfg:QuizCfg;setCfg:(c:QuizC
       </Field>
 
       {cfg.kind==="find"?(
-        <Field label="Mode" note={cfg.hard?"One try per country. A wrong tap marks it missed and moves on.":"Keep tapping until you find it. It only counts as correct if your first tap was right."}>
+        <Field label="Mode" info={MODE_INFO}>
           <div className="toggle-row">
             <Switch on={cfg.hard} onChange={v=>up({hard:v})} label="Hard mode"/>
             <span>{cfg.hard?"Hard mode":"Normal"}</span>
           </div>
         </Field>
       ):(
-        <Field label="Spelling" note={cfg.spell?"Small typos and missing accents are forgiven. Press Enter to check.":"Needs the exact spelling (capitals and accents don't matter) and checks the moment you type it right."}>
+        <Field label="Spelling" info={SPELL_INFO}>
           <div className="toggle-row">
             <Switch on={cfg.spell} onChange={v=>up({spell:v})} label="Spell check"/>
             <span>{cfg.spell?"Spell check on":"Spell check off"}</span>

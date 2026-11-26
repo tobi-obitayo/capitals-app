@@ -167,7 +167,6 @@ dialog.modal[open]{display:flex}
   .run-top{margin-bottom:4px}
   .clock-row{margin:0 0 4px}
   .clock{padding-top:2px;padding-bottom:2px}
-  .clock-toggle{min-height:30px;padding:4px 10px}
   .q{margin-bottom:6px}
   .q .tag{margin-bottom:6px}
   .q h3{font-size:28px;margin-top:2px}
@@ -247,8 +246,6 @@ select:focus{outline:2px solid var(--navy);outline-offset:0}
   .opts,.row2{grid-template-columns:1fr}
   .q h3{font-size:32px}
   .review ul{grid-template-columns:1fr}
-  .reslist li{grid-template-columns:22px 1fr;gap:4px 8px}
-  .reslist li .why{grid-column:2;text-align:left}
   .seg-long{display:none}
   .seg-short{display:inline}
 }
@@ -283,12 +280,14 @@ input[type=text]:focus{outline:2px solid var(--navy);outline-offset:0;border-col
 .switch[aria-checked="true"]{background:var(--navy);border-color:var(--navy)}
 .switch[aria-checked="true"] i{transform:translateX(20px)}
 .toggle-row{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--ink)}
-.presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.presets{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:8px;margin-top:12px}
 .preset{border:1px solid var(--line);background:#fff;border-radius:9px;padding:10px 14px;font-size:14px;font-weight:500;color:var(--muted);min-height:44px;transition:background .12s,color .12s,border-color .12s}
 .preset:hover{border-color:var(--navy);color:var(--navy)}
 .preset[aria-pressed="true"],.preset.custom.on{background:var(--navy);border-color:var(--navy);color:#fff}
-.preset.custom{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;cursor:text}
-.preset.custom input{width:44px;border:0;background:transparent;font:inherit;font-weight:600;color:inherit;text-align:right;padding:4px 0;-moz-appearance:textfield}
+.preset.custom{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:4px 10px;cursor:text;min-width:0}
+.preset.custom input{width:100%;min-width:0;border:0;background:transparent;font:inherit;font-weight:600;color:inherit;text-align:right;padding:4px 0;-moz-appearance:textfield}
+.preset.custom input::placeholder{color:var(--faint);font-weight:500;opacity:1}
+.preset.custom.on input::placeholder{color:rgba(255,255,255,.6)}
 .preset.custom input::-webkit-outer-spin-button,.preset.custom input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .preset.custom input:focus{outline:none}
 .preset.custom:focus-within{border-color:var(--navy)}
@@ -297,10 +296,11 @@ input[type=text]:focus{outline:2px solid var(--navy);outline-offset:0;border-col
 .clock{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:5px 6px 5px 10px;color:var(--navy);font-variant-numeric:tabular-nums}
 .clock .t{font-size:16px;font-weight:700;min-width:44px}
 .clock.off{color:var(--muted)}
+button.clock{font:inherit;cursor:pointer;padding:5px 10px;min-height:36px;transition:border-color .15s,color .15s}
+button.clock:hover{border-color:var(--faint)}
+button.clock:active{background:var(--soft)}
+.clock svg{flex:none}
 .clock.low{color:var(--bad);border-color:var(--bad)}
-.clock-toggle{border:0;background:var(--soft);border-radius:7px;padding:8px 12px;min-height:36px;font-size:12px;font-weight:600;color:var(--muted)}
-.clock-toggle:hover{background:var(--navy-soft);color:var(--navy)}
-.clock-toggle[aria-pressed="true"]{color:var(--navy)}
 .clock-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-8px 0 24px}
 .qscore{font-size:13px;font-weight:600;color:var(--ok)}
 .quiz-foot{display:flex;justify-content:space-between;gap:10px;margin-top:28px}
@@ -310,38 +310,59 @@ input[type=text]:focus{outline:2px solid var(--navy);outline-offset:0;border-col
 .quiz-screen{position:fixed;inset:0;z-index:40;background:#E9EFF5}
 .qcanvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
 .qcanvas.panning{cursor:grabbing}
-.qhud{position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:10px 18px;
+.qhud{position:absolute;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;flex-wrap:nowrap;justify-content:center;gap:10px 18px;
+  width:max-content;   /* left:50% alone would cap the bar at half the screen and wrap it */
   max-width:calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));padding:10px 14px;background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 28px rgba(15,23,42,.1)}
-.qh-prompt{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1 1 auto}
+/* the name sits in the middle of its space; a long one wraps onto a second line in balance, never mid-word */
+.qh-prompt{display:flex;align-items:baseline;justify-content:center;gap:10px;min-width:0;flex:1 1 220px}
 .qh-kicker{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8F8254}
-.qh-target{font-size:26px;font-weight:700;color:var(--navy);letter-spacing:-.01em;min-width:0;overflow-wrap:anywhere}
-.qh-meta{display:flex;align-items:baseline;gap:10px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.qh-target{font-size:26px;line-height:1.15;font-weight:700;color:var(--navy);letter-spacing:-.01em;min-width:0;overflow-wrap:break-word;text-wrap:balance}
+.qh-meta{display:flex;align-items:baseline;gap:10px;font-size:13px;color:var(--muted);flex:none;white-space:nowrap}
 .qh-meta b{color:var(--ink);font-size:14px;font-variant-numeric:tabular-nums}
-.qh-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.qh-actions{display:flex;align-items:center;gap:8px;flex:none}
+.qhud .clock{flex:none}
+.qh-close{flex:none;order:1}
+@media(max-width:1280px){.qh-ok{display:none}}
 .badge{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#8F8254;background:var(--gold-soft);border-radius:999px;padding:2px 9px}
 .qtoast{position:absolute;top:92px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;font-size:13px;padding:8px 14px;border-radius:10px;pointer-events:none;max-width:calc(100vw - 32px)}
 .qloading{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:14px;pointer-events:none}
 .zoom-tools{position:absolute;left:max(16px,env(safe-area-inset-left));bottom:max(16px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px}
 .zoom-tools .icon-btn{font-size:18px;line-height:1}
-.qhint{position:absolute;right:max(16px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));font-size:12px;color:var(--faint);pointer-events:none}
-.qh-close{order:1}
 .reset-view{display:none}
-@media(max-width:700px){
-  /* two tight rows pinned to the top edge:  FIND Mali | 1/54 | timer | X   then   Skip | Give up */
+/* Find-the-country bar on phones and tablets
+   [ 1/54   clock   [ Skip ] [ Give up ] ]   info and controls fill the first row, no gap
+   [        FIND  name (wraps freely)  X ]   the name gets its own row; the X sits at its end
+   Under 360px the buttons drop to a row of their own.                                        */
+@media(max-width:1000px){
   .qhud{
-    display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:8px 10px;
-    left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));top:max(8px,env(safe-area-inset-top));
-    transform:none;max-width:none;padding:10px 12px;
+    display:grid;align-items:center;gap:8px;
+    grid-template-columns:auto auto minmax(0,1fr) minmax(0,1fr);grid-template-areas:"m c s g" "p p p p";
+    left:50%;right:auto;top:max(8px,env(safe-area-inset-top));transform:translateX(-50%);
+    width:min(560px,calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)));max-width:none;padding:10px 12px 10px;border-radius:14px;
   }
-  .qh-prompt{flex-direction:column;align-items:flex-start;gap:0;flex:none;min-width:0}
-  .qh-target{font-size:20px;line-height:1.15;overflow-wrap:break-word}
-  .qh-meta{flex:none;white-space:nowrap}
-  .qh-ok,.qhud .badge,.qhud .clock-toggle{display:none}
-  .qhud .clock{padding:5px 10px}
-  .qh-close{order:0}
-  .qh-actions{grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%}
-  .qh-actions .btn.small{width:100%;min-width:0;white-space:nowrap}
-  .qhint{display:none}
+  .qh-meta{grid-area:m;font-size:15px}
+  .qh-meta b{font-size:16px}
+  .qhud .clock{grid-area:c;padding:4px 12px;min-height:44px}
+  .qhud .clock .t{font-size:18px;min-width:0}
+  .qh-actions{display:contents}
+  .qh-actions>:first-child{grid-area:s}
+  .qh-actions>:last-child{grid-area:g}
+  .qh-actions .btn.small{width:100%;min-width:0;min-height:44px;padding:8px 6px;font-size:15px;white-space:nowrap}
+  /* kicker and name read as one centred phrase, wrapping as needed; the side padding keeps it clear of the X */
+  .qh-prompt{grid-area:p;display:block;flex:none;min-width:0;text-align:center;text-wrap:balance;padding:2px 52px 0;min-height:44px;align-content:center}
+  /* .fit: the name was shrunk to one line (see FindQuiz); it centres in the space left of the X instead of the whole bar */
+  .qh-prompt.fit{white-space:nowrap;padding-left:0;padding-right:48px;text-wrap:nowrap}
+  .qh-prompt.fit .qh-target{white-space:nowrap;text-wrap:nowrap}
+  .qh-kicker{display:inline;margin-right:8px;font-size:11px;vertical-align:3px}
+  .qh-target{display:inline;font-size:24px;line-height:1.2;text-align:center}
+  .qh-close{grid-area:p;justify-self:end;align-self:center;order:0;width:40px;height:40px;font-size:16px}
+  .qh-ok,.qhud .badge{display:none}
+}
+@media(max-width:359px){
+  .qhud{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"m c" "s g" "p p"}
+  .qhud .clock{justify-self:end}
+}
+@media(max-width:700px){
   /* pinch zooms; the +/- stack would sit on top of the island boxes, so only a reset shows (and only while zoomed) */
   .zoom-tools{display:none}
   .reset-view{display:inline-grid;position:absolute;right:max(12px,env(safe-area-inset-right));width:44px;height:44px;font-size:18px;line-height:1;background:rgba(255,255,255,.96)}
@@ -381,7 +402,7 @@ input[type=text]:focus{outline:2px solid var(--navy);outline-offset:0;border-col
 .reslist li.ok .mk{color:#15803D}.reslist li.bad .mk{color:var(--bad)}
 .reslist li .who{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
 .reslist li .cap{color:var(--muted);font-size:13px}
-.reslist li .why{color:var(--muted);font-size:12px;text-align:right}
+.reslist li .why{color:var(--muted);font-size:12px;text-align:right;max-width:46vw}
 
 /* results: hovering a row lifts its country on the map, and the other way round */
 .reslist li.hot{background:var(--soft);box-shadow:0 2px 10px rgba(0,48,87,.12);position:relative}
@@ -404,6 +425,43 @@ input[type=text]:focus{outline:2px solid var(--navy);outline-offset:0;border-col
   .chip.world{grid-column:1 / -1}
 }
 
+/* continent list: the chevron rides on top of the open list so it can always be tapped to close it */
+.handle.riding{bottom:calc(var(--dock-h,90px) + max(16px,env(safe-area-inset-bottom)) + 2px)}
+.dock-head{display:none}
+@media(max-width:700px){
+  /* variant 1: the list carries its own grab bar and close button, so the chevron steps aside */
+  .handle.riding.v1{display:none}
+  .dock-v1{padding-top:0}
+  .dock-v1 .dock-head{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    position:sticky;top:0;z-index:2;grid-column:1 / -1;margin:0 -8px;padding:18px 8px 2px 16px;
+    background:rgba(255,255,255,.98);touch-action:none;cursor:grab;
+  }
+  .dock-grip{position:absolute;top:7px;left:50%;width:40px;height:5px;margin-left:-20px;border-radius:999px;background:#CBD5E1}
+  .dock-title{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8F8254}
+  .dock-x{width:44px;height:44px}
+}
+
 /* landscape phone, flat map: the controls fade out so the map gets the whole screen */
 .float,.handle,.hint,.tools{transition:opacity .25s}
+.handle{transition:opacity .25s,bottom .28s cubic-bezier(.2,.8,.2,1)}
 body.chrome-idle .float,body.chrome-idle .handle,body.chrome-idle .hint,body.chrome-idle .tools{opacity:0;pointer-events:none}
+
+/* results: the whole screen fits without scrolling the page (only the answer list scrolls inside itself) */
+.left>.res-wrap{flex:1 1 0;min-height:0;display:flex;flex-direction:column;margin-top:0;margin-bottom:0}
+.res-sum{flex:none;display:flex;align-items:center;justify-content:center;gap:16px;text-align:left}
+.res-sum .pct{font-size:56px;font-weight:700;color:var(--navy);letter-spacing:-.03em;line-height:1}
+.res-sub{color:var(--muted);font-size:14px;margin-top:3px}
+.res-wrap .resbar{flex:none;width:100%;max-width:none;margin-top:12px}
+.res-tabs{flex:none;margin-top:14px}
+.res-title{flex:none;margin:14px 0 0;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.res-wrap .reslist{flex:1 1 0;min-height:72px;overflow-y:auto;margin:6px -8px 12px;padding:0 8px;scrollbar-width:thin;scrollbar-color:#D5DBE3 transparent;-webkit-overflow-scrolling:touch}
+.res-wrap .reslist ul{margin:0}
+.res-actions{flex:none;display:flex;flex-direction:column;gap:8px}
+.res-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.res-row .btn{padding:10px 6px;font-size:14px;min-height:44px}
+@media(max-width:900px){
+  .res-sum .pct{font-size:44px}
+  .res-sub{font-size:13px}
+  .res-wrap .reslist li{padding-top:7px;padding-bottom:7px;min-height:40px}
+}

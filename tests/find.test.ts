@@ -72,6 +72,23 @@ describe("find the country: scene and hit testing",()=>{
     expect(zoomView(v1,0,0,.2)).toEqual(V1);
   });
 
+  it("enclaves in Europe can be tapped: the dot wins over the country around it",async()=>{
+    const world=await loadWorld50();
+    const P2=(c:[number,number])=>c;
+    for(const [W2,H2] of [[1440,860],[390,844],[820,1180]]){
+      const scene=buildScene(world,"Europe",W2,H2,{top:W2<480?150:84});
+      for(const n of ["Vatican City","San Marino","Monaco","Liechtenstein","Andorra","Malta"]){
+        const {p,panel}=clickPointFor(world,scene,V1,n);
+        expect(panel,n).not.toBe("main");
+        // on the dot, and a few pixels off it
+        for(const [dx,dy] of [[0,0],[5,4],[-5,-4]]){
+          const q=P2([p[0]+dx,p[1]+dy]);
+          expect(hitTest(world,scene,V1,q[0],q[1]),`${n} ${W2}x${H2} ${dx},${dy}`).toBe(n);
+        }
+      }
+    }
+  });
+
   it("renders screenshots",async()=>{
     const {world,scene}=await setup();
     mkdirSync("/tmp/v",{recursive:true});

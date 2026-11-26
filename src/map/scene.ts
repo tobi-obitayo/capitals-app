@@ -39,6 +39,8 @@ interface InsetDef{
   boost?:number;
   /** same, on short or narrow panes (phones), where the map is smallest and islands hardest to hit */
   shortBoost?:number;
+  /** shrink the usual inset size (a single country that needs little room) */
+  shrink?:number;
 }
 
 /** boxed magnifications: where the islands/micro-states are too small to see or click */
@@ -49,6 +51,8 @@ export const INSETS:Partial<Record<Scope,InsetDef[]>>={
   ],
   Europe:[
     {id:"micro",label:"Micro-states",short:"Micro",box:[0,35.5,15,48.5],corners:["bl","br","tl","tr"]},
+    // Vatican City and San Marino are specks inside Italy: a close-up of just that stretch
+    {id:"rome",label:"Rome & San Marino",short:"Rome",box:[11.4,41.3,13.5,44.4],corners:["br","tr","bl","tl"]},
   ],
   Africa:[
     {id:"atlantic",label:"Atlantic islands",short:"Atlantic",box:[-25.5,14,-22.5,17.5],corners:["tl","bl","tr","br"]},
@@ -57,7 +61,7 @@ export const INSETS:Partial<Record<Scope,InsetDef[]>>={
   ],
   Asia:[
     {id:"gulf",label:"Persian Gulf",short:"Gulf",box:[47.5,23.5,56.5,30.5],corners:["bl","br","tl","tr"]},
-    {id:"maldives",label:"Maldives",box:[72.5,-1,74.2,8],corners:["bl","tl","br","tr"]},
+    {id:"maldives",label:"Maldives",box:[72.5,-1,74.2,8],corners:["bl","tl","br","tr"],shrink:.65},
     {id:"singapore",label:"Singapore",box:[103.5,1.1,104.2,1.55],corners:["br","tr","bl","tl"]},
   ],
   Oceania:[
@@ -162,9 +166,10 @@ export function buildScene(world:World,cn:Scope,W:number,H:number,o:SceneOpts={}
       const aspect=Math.max(.35,(Math.max(...ps.map(p=>p[0]))-Math.min(...ps.map(p=>p[0])))/(Math.max(...ps.map(p=>p[1]))-Math.min(...ps.map(p=>p[1]))));
       // tiny geographic boxes (Singapore, Maldives) stay compact so they don't cover other land
       const span=Math.hypot((w0<=e0?e0-w0:e0+360-w0),(n0-s0));
-      const sizeCap=d.boost?1:span<3?.55:span<12?.75:1;
+      const sizeCap=(d.boost?1:span<3?.55:span<12?.75:1)*(d.shrink??1);
       let w=maxW*sizeCap,h=(w-12)/aspect+LABEL_H+8;
       if(h>maxH*sizeCap){h=maxH*sizeCap;w=(h-LABEL_H-8)*aspect+12}
+      if(d.shrink)w=Math.max(w,78);   // still wide enough for its title
       const at=(c:Corner,k:number):Rect=>{
         const ww=w*k,hh=h*k;
         return{
@@ -475,7 +480,35 @@ const nearHit=()=>coarsePointer()?20:10;
 const hitBoost=(scene:Scene)=>lookOf(scene.cn).bold?1.35:1;
 const dotR=(hl:boolean)=>coarsePointer()?(hl?9:7.5):(hl?6:4.5);
 
+/** a country this small on screen is a dot you aim at, so its dot wins over the country around it (Vatican City inside Italy) */
+const DOT_PRIORITY_AREA=DOT_AREA;
+const dotHit=()=>coarsePointer()?18:11;
+
 function hitPanel(world:World,scene:Scene,panel:Panel,P:GeoProjection,x:number,y:number):string|null{
+  // tiny countries first: a tap on (or near) their dot would otherwise land in the polygon of the country that surrounds them
+  {
+    const path=geoPath(P);
+    const reach=dotHit()*hitBoost(scene);
+    let near:string|null=null,nd=reach;
+    // only where such countries are drawn as dots: in the boxes, and on the main map of looks that ask for it
+    const dotsShown=!!panel.rect||lookOf(scene.cn).bold;
+    for(const s of dotsShown?world.shapes:[]){
+      if(!shapeInScope(s,scene.cn)||!s.n)continue;
+      if(panel.box&&!boundsOverlapBox(s.bounds,panel.box))continue;
+      if(path.area(s.feat)>=(panel.rect?DOT_PRIORITY_AREA:MAIN_DOT_AREA))continue;
+      const c=path.centroid(s.feat);
+      if(!isFinite(c[0])||!isFinite(c[1]))continue;
+      const d=Math.hypot(c[0]-x,c[1]-y);
+      if(d<nd){nd=d;near=s.n}
+    }
+    for(const mk of markersFor(world,scene.cn)){
+      const p=P(mk.ll) as [number,number]|null;
+      if(!p)continue;
+      const d=Math.hypot(p[0]-x,p[1]-y);
+      if(d<nd){nd=d;near=mk.n}
+    }
+    if(near)return near;
+  }
   const ll=P.invert?.([x,y]);
   if(ll&&isFinite(ll[0])&&isFinite(ll[1])){
     for(const s of world.shapes){

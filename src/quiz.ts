@@ -13,7 +13,7 @@ export interface QuizCfg{
   spell:boolean;
 }
 export const DEFAULT_CFG:QuizCfg={kind:"find",timerOn:true,seconds:300,hard:false,spell:true};
-export const TIMER_PRESETS=[60,120,300,600];
+export const TIMER_PRESETS=[300,600];
 
 /** every continent has Find-the-country and Name-the-capital quizzes */
 export const QUIZ_CONTINENTS:ContinentName[]=[...CONT_NAMES];

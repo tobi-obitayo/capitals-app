@@ -35,6 +35,9 @@ function useMedia(q:string){
   return m;
 }
 
+/** TEMPORARY: ?dock=1 or ?dock=2 picks how phones close the continent list, so both can be tried on a real device */
+const dockVariant:1|2=new URLSearchParams(location.search).get("dock")==="2"?2:1;
+
 export default function App(){
   const [view,setView]=useState<View>("globe");
   const [autoSpin,setAutoSpin]=useState(()=>!matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -169,12 +172,14 @@ export default function App(){
 
       <div className="hint">Tap a continent to begin</div>
       {!paused&&(
-        <button className="handle" aria-expanded={dockOpen} aria-label={dockOpen?"Hide continent list":"Show continent list"}
-          onClick={()=>setDockOpen(o=>!o)}>
+        <button className={"handle"+(dockOpen?" riding":"")+(dockVariant===1?" v1":"")} aria-expanded={dockOpen}
+          aria-label={dockOpen?"Hide continent list":"Show continent list"} onClick={()=>setDockOpen(o=>!o)}>
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11l5-5 5 5"/></svg>
         </button>
       )}
-      <Dock ref={dockRef} open={dockOpen&&!paused} onOpen={openDrill} onHover={setHighlight}/>
+      {/* closing blurs first: a focused button inside the list would keep it open (:focus-within) */}
+      <Dock ref={dockRef} open={dockOpen&&!paused} onOpen={openDrill} onHover={setHighlight}
+        onClose={()=>{(document.activeElement as HTMLElement|null)?.blur?.();setDockOpen(false)}} variant={dockVariant}/>
 
       {overlay?.t==="drill"&&(
         <DrillModal key={overlay.cn} cn={overlay.cn} prefs={prefs} setPrefs={setPrefs} onClose={()=>setOverlay(null)}

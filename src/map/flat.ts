@@ -21,7 +21,8 @@ export const LABEL_ZOOM=2;
 export const DETAIL_SCALE=1.8;
 
 export interface FlatView{zoom:number;px:number;py:number}
-export const FLAT_HOME:FlatView={zoom:1,px:0,py:0};
+/** first view: 20% closer than fitting the world, so less open sea shows above and below it (you can still zoom out to the whole world) */
+export const FLAT_HOME:FlatView={zoom:1.2,px:0,py:0};
 
 /** projected extent of the cropped world at scale 1 */
 const unit=geoNaturalEarth1().scale(1).translate([0,0]);

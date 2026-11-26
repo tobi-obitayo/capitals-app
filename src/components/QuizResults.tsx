@@ -4,6 +4,7 @@ import {score,type ItemResult,type QuizResult} from "../quiz";
 import {BAD_FILL,OK_FILL} from "../map/mini";
 import {fmtTime} from "../util";
 import {DrillMap} from "./DrillMap";
+import {Seg} from "./ui";
 import {ModalShell} from "./ModalShell";
 
 interface Props{
@@ -37,6 +38,7 @@ export function QuizResults({result,onRetry,onReview,onSetup,onClose}:Props){
   useEffect(()=>{
     if(hover?.from==="map")rows.current.get(hover.k)?.scrollIntoView?.({block:"nearest",behavior:"smooth"});
   },[hover]);
+  const [tab,setTab]=useState<"missed"|"got">("missed");
   const kindName=result.cfg.kind==="find"?"Find the country":"Name the capital";
 
   const select=(k:string,from:"list"|"map")=>{
@@ -62,52 +64,54 @@ export function QuizResults({result,onRetry,onReview,onSetup,onClose}:Props){
     );
   };
 
+  const both=missed.length>0&&got.length>0;
+  const shown=tab==="missed"&&missed.length>0||got.length===0?missed:got;
+  const shownName=shown===missed?"Missed":"Got it";
+
   return(
     <ModalShell title={`${result.cn} · ${kindName}`} sub="Results" onClose={onClose}
       right={(
         <DrillMap cn={result.cn} fill={fill} hl={null} emph={hover?.k??null}
-          onHover={n=>setHover(n&&statusOf.has(n)?{k:n,from:"map"}:null)}>
+          onHover={n=>{
+            if(n&&statusOf.has(n))setTab(statusOf.get(n)==="ok"?"got":"missed");
+            setHover(n&&statusOf.has(n)?{k:n,from:"map"}:null);
+          }}>
           <div className="mlegend">
             <span><i className="sw" style={{background:OK_FILL}}/>Got it</span>
             <span><i className="sw" style={{background:BAD_FILL}}/>Missed</span>
           </div>
         </DrillMap>
       )}>
-      <div className="done">
-        <div className="eyebrow">{REASON[result.reason]}</div>
-        <div className="pct">{pct}%</div>
-        <div style={{color:"var(--muted)",fontSize:14}}>
-          {ok} of {total} correct · {fmtTime(result.elapsed)}{result.cfg.hard&&result.cfg.kind==="find"?" · Hard mode":""}
+      <div className="res-wrap">
+        <div className="res-sum">
+          <div className="pct">{pct}%</div>
+          <div className="res-meta">
+            <div className="eyebrow">{REASON[result.reason]}</div>
+            <div className="res-sub">
+              {ok} of {total} correct · {fmtTime(result.elapsed)}{result.cfg.hard&&result.cfg.kind==="find"?" · Hard mode":""}
+            </div>
+          </div>
         </div>
         <div className="resbar" aria-hidden="true">
           <i className="g" style={{width:`${ok/total*100}%`}}/><i className="r" style={{width:`${(total-ok)/total*100}%`}}/>
         </div>
-      </div>
 
-      <div className="reslist">
-        {missed.length>0&&(
-          <>
-            <h4>Missed ({missed.length})</h4>
-            <ul>{missed.map(row)}</ul>
-          </>
-        )}
-        {got.length>0&&(
-          <>
-            <h4>Got it ({got.length})</h4>
-            <ul>{got.map(row)}</ul>
-          </>
-        )}
-      </div>
+        {both
+          ?<div className="res-tabs"><Seg full label="Missed or got it" value={shown===missed?"missed":"got"} onChange={setTab}
+              options={[{value:"missed",label:`Missed (${missed.length})`},{value:"got",label:`Got it (${got.length})`}]}/></div>
+          :<h4 className="res-title">{shownName} ({shown.length})</h4>}
+        <div className="reslist"><ul>{shown.map(row)}</ul></div>
 
-      <div className="stack">
-        {missed.length>0&&(
-          <button className="btn" autoFocus onClick={()=>onReview(missed.map(m=>dataByName[m.k]))}>Review missed ({missed.length})</button>
-        )}
-        <div className="row2">
-          <button className="btn ghost" autoFocus={missed.length===0} onClick={onRetry}>Try again</button>
-          <button className="btn ghost" onClick={onSetup}>Quiz settings</button>
+        <div className="res-actions">
+          {missed.length>0&&(
+            <button className="btn" autoFocus onClick={()=>onReview(missed.map(m=>dataByName[m.k]))}>Review missed ({missed.length})</button>
+          )}
+          <div className="res-row">
+            <button className="btn ghost" autoFocus={missed.length===0} onClick={onRetry}>Try again</button>
+            <button className="btn ghost" onClick={onSetup}>Quiz settings</button>
+            <button className="btn plain" onClick={onClose}>Back to map</button>
+          </div>
         </div>
-        <button className="btn plain" onClick={onClose}>Back to map</button>
       </div>
     </ModalShell>
   );

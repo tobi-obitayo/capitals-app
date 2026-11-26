@@ -138,6 +138,23 @@ try{
     await measure(page,"phone-flat pan","phone",()=>swipe(cdp,300,420,-220,60));
     await ctx.close();
   }
+  if(want("phone-globe")){
+    const {ctx,page,cdp}=await open("phone");
+    await pause(1500);
+    await cdp.send("Emulation.setCPUThrottlingRate",{rate:6});
+    await measure(page,"phone-globe pinch in","phone",()=>pinch(cdp,195,420,5));
+    await measure(page,"phone-globe zoomed spin","phone",()=>swipe(cdp,300,420,-220,30));
+    await measure(page,"phone-globe pinch out","phone",()=>pinch(cdp,195,420,.2));
+    await ctx.close();
+  }
+  if(want("desktop-globe")){
+    const {ctx,page,cdp}=await open("desktop");
+    await pause(1500);
+    await cdp.send("Emulation.setCPUThrottlingRate",{rate:4});
+    await measure(page,"desktop-globe wheel in","desktop",()=>wheel(page,60,-80,720,450));
+    await measure(page,"desktop-globe zoomed drag","desktop",()=>dragMouse(page,900,450,400,430));
+    await ctx.close();
+  }
   if(want("desktop-quiz")){
     const {ctx,page,cdp}=await open("desktop");
     await toFindQuiz(page,"desktop");
